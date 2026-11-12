@@ -131,7 +131,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:13px}
     <div><h1>財務規劃台</h1><div class="sub" id="subt"></div></div>
     <div class="grow"></div>
     <span class="st" id="savest"></span>
-    <button class="btn primary" id="saveBtn" disabled>儲存</button>
+    <button class="btn primary" id="saveBtn">儲存</button>
     <button class="btn ghost" id="lockBtn" title="鎖定">鎖定</button>
   </div>
   <nav class="tabs" role="tablist" id="tabs">
@@ -305,13 +305,13 @@ function showBanner(t){ const b=$('#banner'); b.textContent=t; b.style.display=t
 /* ========== 儲存 ========== */
 function repoName(){ const r=ls.get('fin.repo'); if(r) return r; const h=location.hostname.match(/^([^.]+)\.github\.io$/); const p=location.pathname.split('/').filter(Boolean)[0]; return h&&p?`${h[1]}/${p}`:'a0981755429-debug/tw-stock-cloud'; }
 let draftT=null;
-function setDirty(v){ dirty=v; $('#saveBtn').disabled=!v; $('#savest').textContent=v?'尚未儲存':''; if(v){ clearTimeout(draftT); draftT=setTimeout(saveDraft,800); } }
+function setDirty(v){ dirty=v; $('#savest').textContent=v?'尚未儲存':''; if(v){ clearTimeout(draftT); draftT=setTimeout(saveDraft,800); } }
 async function saveDraft(){ D.savedAt=new Date().toISOString(); ls.set('fin.draft',JSON.stringify(await encryptData())); }
 $('#saveBtn').onclick=async()=>{
   D.savedAt=new Date().toISOString(); D.updatedAt=D.savedAt.slice(0,10);
   const v=await encryptData(); const body=JSON.stringify(v)+'\n'; const tok=ls.get('fin.token');
   if(!tok){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type:'application/json'})); a.download='vault.json'; a.click();
-    ls.set('fin.draft',body); $('#savest').textContent='已下載 vault.json（沒有設定 GitHub 金鑰）'; $('#saveBtn').disabled=true; dirty=false; return; }
+    ls.set('fin.draft',body); $('#savest').textContent='已下載 vault.json（沒有設定 GitHub 金鑰）'; dirty=false; return; }
   $('#savest').textContent='上傳中…';
   const api=`https://api.github.com/repos/${repoName()}/contents/docs/finance/vault.json`;
   const H={Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'};
@@ -620,7 +620,7 @@ function renderAll(soft){
 function refreshAllocSums(){ /* 編輯分配表時不重建輸入框，只更新總覽 */ }
 
 /* ========== 設定動作 ========== */
-$('#tokSave').onclick=()=>{ const t=$('#tokIn').value.trim(), r=$('#repoIn').value.trim(); if(r) ls.set('fin.repo',r); if(t) ls.set('fin.token',t); $('#tokIn').value=''; renderSettings(); };
+$('#tokSave').onclick=()=>{ const t=$('#tokIn').value.trim(), r=$('#repoIn').value.trim(); if(r) ls.set('fin.repo',r); if(t) ls.set('fin.token',t); $('#tokIn').value=''; renderSettings(); if(t) $('#tokSt').textContent='已設定金鑰，按右上角「儲存」上傳'; };
 $('#tokClear').onclick=()=>{ ls.del('fin.token'); renderSettings(); };
 $('#pwChange').onclick=async()=>{ const a=$('#np1').value,b=$('#np2').value; if(a.length<8){ $('#pwSt').textContent='至少 8 個字。'; return; } if(a!==b){ $('#pwSt').textContent='兩次不一樣。'; return; }
   SALT=crypto.getRandomValues(new Uint8Array(16)); KEY=await derive(a,SALT,ITER,true); ls.del('fin.key'); $('#np1').value=$('#np2').value=''; setDirty(true); $('#pwSt').textContent='已換成新密碼，按上方「儲存」後生效。'; };
