@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import config, data, holdings, notify
+from stockapp import config, data, holdings, journal, notify
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -109,6 +109,23 @@ def summary_message(items: list[dict], today: str) -> str:
     return "\n".join(lines)
 
 
+def journal_text(items: list[dict], info: dict, now: datetime) -> str:
+    """交易紀錄的檢討 / 停損提醒（需要 JOURNAL_PASS）。失敗不影響其他推播。"""
+    try:
+        jd = journal.load()
+        if not jd:
+            return ""
+        prices = {it["id"]: it["close"] for it in items if it["close"] is not None}
+        missing = [sid for sid in journal.to_watch(jd) if sid not in prices]
+        if missing:
+            qs = data.live_quotes([(sid, info.get(sid, {}).get("market", "twse")) for sid in missing])
+            prices.update({sid: q.price for sid, q in qs.items()})
+        return journal.reminders(jd, prices, now.date())
+    except Exception as e:  # noqa: BLE001
+        log.warning("交易紀錄提醒失敗：%s", type(e).__name__)
+        return ""
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--no-push", action="store_true")
@@ -163,6 +180,9 @@ def main(argv=None) -> int:
         msg = summary_message(items, now.strftime("%m/%d"))
         if pf:
             msg += "\n\n" + holdings.summary_text(pf)
+        jr = journal_text(items, info, now)
+        if jr:
+            msg += "\n\n" + jr
         notify.telegram(msg)
     ok = sum(1 for it in items if it["close"] is not None)
     if settings.stocks and ok == 0:

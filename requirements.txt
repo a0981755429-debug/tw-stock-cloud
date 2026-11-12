@@ -1,5 +1,6 @@
 pandas>=2.2
 requests>=2.32
 PyYAML>=6.0
+cryptography>=42
 yfinance>=0.2.40
 pytest>=8.0

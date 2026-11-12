@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#f4f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111513" media="(prefers-color-scheme: dark)">
+<title>交易紀錄</title>
+<style>
+:root{
+  --bg:#f4f5f2;--card:#fff;--ink:#17201b;--muted:#5f6b65;--line:#dfe3df;--chip:#eef1ed;
+  --accent:#1f6b55;--accent-soft:#e0efe8;
+  --pay:#4b6a9b;--live:#c08a2d;--save:#2f8a5b;--stock:#8a5cc2;--flex:#9aa39e;
+  --good:#2b7a3e;--warn:#a26300;--bad:#b3362f;--warn-soft:#fbf0d9;--bad-soft:#f8e2df;
+  --num:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#111513;--card:#1a201d;--ink:#e4ebe7;--muted:#97a49d;--line:#2c3631;--chip:#232b27;
+  --accent:#62c29f;--accent-soft:#1d322a;
+  --pay:#7f9fd6;--live:#e0ac4f;--save:#5cc48b;--stock:#b28ae6;--flex:#6d7772;
+  --good:#6cc382;--warn:#e3a640;--bad:#ef7b70;--warn-soft:#382c14;--bad-soft:#3b1f1c;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+.num{font-family:var(--num);font-variant-numeric:tabular-nums}
+header{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 16px 0}
+.hd{max-width:1080px;margin:0 auto;display:flex;align-items:center;gap:10px}
+h1{font-size:18px;margin:0;letter-spacing:.02em;white-space:nowrap}
+.sub{color:var(--muted);font-size:12px}
+.grow{flex:1;min-width:0}
+.gnav,.snav{max-width:1080px;margin:6px auto 0;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.gnav::-webkit-scrollbar,.snav::-webkit-scrollbar{display:none}
+.gnav button,.snav button{border:0;background:none;color:var(--muted);font:inherit;font-size:14px;padding:8px 12px;border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer}
+.gnav button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.snav{margin:0 auto;padding:6px 0 8px;gap:6px}
+.snav button{border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:13px;background:var(--card)}
+.snav button[aria-selected=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+main{max-width:1080px;margin:0 auto;padding:14px 16px 90px}
+section{display:flex;flex-direction:column;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.card h2{font-size:16px;margin:0 0 4px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.card h3{font-size:14px;margin:14px 0 6px;color:var(--muted)}
+.hint{color:var(--muted);font-size:13px;margin:0 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.kpi .l{font-size:12px;color:var(--muted)}
+.kpi .v{font-family:var(--num);font-size:21px;font-weight:600;line-height:1.3}
+.kpi .n{font-size:12px;color:var(--muted)}
+.kpi.bad{border-color:var(--bad)} .kpi.bad .v{color:var(--bad)}
+.kpi.warn .v{color:var(--warn)}
+.pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.pill.good{background:var(--accent-soft);color:var(--good)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.tag{display:inline-block;font-size:11px;padding:0 6px;border-radius:6px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;font-weight:500}
+.tag.est{border-color:var(--warn);color:var(--warn)} .tag.chk{border-color:var(--bad);color:var(--bad)}
+.btn{font:inherit;font-size:14px;border-radius:9px;padding:6px 14px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.ghost{border:0;background:none;color:var(--muted);padding:4px 6px}
+.btn.sm{font-size:12px;padding:2px 10px}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tbl{overflow-x:auto;margin:0 -4px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-weight:500;color:var(--muted);text-align:left;font-size:12px;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+td.r,th.r{text-align:right}
+tr.tot td{font-weight:600;border-top:2px solid var(--line)}
+tr.grp td{color:var(--muted);font-size:12px;padding-top:10px}
+tr.auto td{color:var(--muted)}
+td input,td select{font:inherit;width:100%;min-width:70px;background:transparent;border:1px solid transparent;border-radius:6px;padding:3px 6px;color:var(--ink)}
+td input.n{font-family:var(--num);text-align:right;min-width:96px}
+td input.w{min-width:180px}
+td.chk input{width:18px;height:18px;min-width:18px;accent-color:var(--accent)}
+tr.done td input.w{text-decoration:line-through;color:var(--muted)}
+body.edit td input:not([type=checkbox]),body.edit td select{border-color:var(--line);background:var(--bg)}
+body:not(.edit) td input:not([type=checkbox]),body:not(.edit) td select{pointer-events:none;-webkit-appearance:none;appearance:none}
+body:not(.edit) .edonly{display:none!important}
+.it{table-layout:fixed} .it td input.w,.it td input.n,.it select{min-width:0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.form{display:flex;flex-wrap:wrap;gap:10px}
+.form label{display:flex;flex-direction:column;font-size:12px;color:var(--muted);gap:2px;min-width:130px;flex:1}
+.form input,.form select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+ul.notes{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.notes li{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.bar{display:flex;height:24px;border-radius:7px;overflow:hidden;margin:6px 0}
+.bar span{display:block;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.phase{border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.phase.now{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.phase summary{list-style:none;cursor:pointer}
+.phase summary::-webkit-details-marker{display:none}
+.phase .t{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.sum4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}
+.sum4 div{background:var(--chip);border-radius:8px;padding:6px 8px;font-size:12px;color:var(--muted)}
+.sum4 b{display:block;font-family:var(--num);font-size:15px;color:var(--ink)}
+.prog{position:relative;height:8px;background:var(--chip);border-radius:99px;overflow:visible;margin:6px 0 2px}
+.prog span{display:block;height:100%;background:var(--accent);border-radius:99px}
+.prog i{position:absolute;top:-3px;width:2px;height:14px;background:var(--ink);opacity:.5}
+.goal{display:flex;flex-direction:column;gap:2px}
+.goal .top{display:flex;justify-content:space-between;gap:8px;font-size:14px;flex-wrap:wrap}
+.goal .sm{font-size:12px;color:var(--muted)}
+.lines{display:flex;flex-direction:column;gap:4px;font-size:14px}
+.lines div{display:flex;justify-content:space-between;gap:10px}
+.lines div.tot{border-top:1px solid var(--line);padding-top:4px;font-weight:600}
+.lines span:last-child{font-family:var(--num);white-space:nowrap}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--muted);font-size:11px;font-family:var(--num)}
+.empty{color:var(--muted);padding:12px 0}
+#lock{min-height:100vh;display:grid;place-items:center;padding:16px}
+#lock .card{max-width:380px;width:100%}
+#lock input[type=password]{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);margin:8px 0}
+.err{color:var(--bad);font-size:13px;min-height:1.4em}
+#banner{max-width:1080px;margin:10px auto 0;padding:8px 12px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:13px}
+.st{font-size:12px;color:var(--muted)}
+details.more summary{cursor:pointer;color:var(--accent);font-size:13px}
+#toast{position:fixed;left:50%;bottom:84px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:10px;font-size:14px;z-index:30;display:flex;gap:12px;align-items:center}
+#toast button{background:none;border:0;color:var(--accent-soft);font:inherit;font-weight:600;cursor:pointer}
+@media (max-width:720px){
+  .gnav{position:fixed;bottom:0;left:0;right:0;margin:0;background:var(--card);border-top:1px solid var(--line);justify-content:space-around;padding-bottom:env(safe-area-inset-bottom);z-index:20}
+  .gnav button{flex:1;border-bottom:0;border-top:2px solid transparent;padding:10px 4px}
+  .gnav button[aria-selected=true]{border-top-color:var(--accent)}
+  .sum4{grid-template-columns:repeat(2,1fr)} .kpi .v{font-size:18px} h1{font-size:16px} .hd .sub{display:none}
+  .hd{flex-wrap:wrap} #savest{order:9;width:100%;margin-top:-4px}
+  header{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--bg);padding-bottom:4px}
+}
+textarea{font:inherit;width:100%;min-height:64px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);resize:vertical}
+.form label.full{flex-basis:100%}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.checks{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.checks li{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.checks .ic{flex:none;width:20px;text-align:center;font-weight:700}
+.checks .ok .ic{color:var(--good)} .checks .soft .ic{color:var(--warn)} .checks .hard .ic{color:var(--bad)}
+.verdict{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;margin-top:10px;font-weight:600}
+.verdict.good{background:var(--accent-soft);color:var(--good)} .verdict.warn{background:var(--warn-soft);color:var(--warn)} .verdict.bad{background:var(--bad-soft);color:var(--bad)}
+.verdict .big{font-size:20px}
+.tr{border:1px solid var(--line);border-radius:12px;margin-top:10px;overflow:hidden}
+.tr>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;gap:10px;align-items:center}
+.tr>summary::-webkit-details-marker{display:none}
+.tr .bd{padding:0 12px 12px;border-top:1px solid var(--line)}
+.tr .nm{flex:1;min-width:0}
+.tr .nm b{font-size:15px} .tr .nm .st{display:block}
+.tr .rt{text-align:right;font-family:var(--num);white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;line-height:1.3}
+.up{color:#d6283b} .down{color:#10893e}
+@media (prefers-color-scheme:dark){.up{color:#ff5a6a}.down{color:#2fbf6a}}
+.quote{background:var(--chip);border-radius:8px;padding:8px 10px;font-size:14px;white-space:pre-wrap;margin:4px 0}
+.sub2{font-size:12px;color:var(--muted);margin:10px 0 2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.tbl td,.tbl th{white-space:nowrap}
+.card .kpis{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+</style>
+</head>
+<body>
+
+<div id="lock">
+  <div class="card">
+    <h2>交易紀錄</h2>
+    <p class="hint" id="lockHint">資料有加密，輸入密碼才會在這台裝置上解開。密碼不會傳到任何地方。</p>
+    <form id="lockf">
+      <input id="pw" type="password" autocomplete="current-password" placeholder="密碼" aria-label="密碼">
+      <input id="pw2" type="password" autocomplete="new-password" placeholder="再輸入一次密碼" aria-label="再輸入一次密碼" hidden>
+      <label class="st"><input id="remember" type="checkbox"> 在這台裝置記住</label>
+      <div class="err" id="pwerr"></div>
+      <button class="btn primary" style="width:100%" id="lockGo">解鎖</button>
+    </form>
+    <p class="st" style="margin-top:12px"><a href="../">← 回我的台股</a></p>
+  </div>
+</div>
+
+<div id="app" hidden>
+<header>
+  <div class="hd">
+    <div class="grow"><h1>📓 交易紀錄</h1><div class="sub">下單前先過關卡，買完記理由，到期回頭檢討</div></div>
+    <span class="st" id="savest"></span>
+    <button class="btn primary sm" id="saveBtn">儲存</button>
+    <button class="btn ghost sm" id="lockBtn" title="鎖定">🔒</button>
+  </div>
+  <nav class="gnav" id="gnav" role="tablist"></nav>
+</header>
+<div id="banner" hidden></div>
+<main>
+  <section data-tab="overview"></section>
+  <section data-tab="new" hidden></section>
+  <section data-tab="list" hidden></section>
+  <section data-tab="stats" hidden></section>
+  <section data-tab="settings" hidden></section>
+</main>
+<div id="toast" hidden></div>
+</div>
+
+<script>
+"use strict";
+/* ========== 小工具 ========== */
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const fmt=n=>(n==null||n===''||!isFinite(n))?'—':Math.round(n).toLocaleString('zh-TW');
+const px=n=>(n==null||n===''||!isFinite(n))?'—':(+n).toLocaleString('zh-TW',{maximumFractionDigits:2});
+const pct=(v,d=1)=>v==null||!isFinite(v)?'—':(v*100).toFixed(d)+'%';
+const spct=(v,d=1)=>v==null||!isFinite(v)?'—':(v>0?'+':'')+(v*100).toFixed(d)+'%';
+const cls=v=>v>0?'up':v<0?'down':'';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=v=>v===''||v==null||!isFinite(+v)?null:+v;
+const pad=n=>String(n).padStart(2,'0');
+const dstr=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+const TODAY=dstr(new Date());
+const addDays=(s,n)=>{const d=new Date(s+'T00:00:00');d.setDate(d.getDate()+n);return dstr(d)};
+const daysBetween=(a,b)=>Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/864e5);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const ls={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}},del:k=>{try{localStorage.removeItem(k)}catch{}}};
+
+const TYPES=['配息存股','成長','波段','價值','其他'];
+const isEtf=sid=>/^00/.test(sid||'');
+const longHold=t=>isEtf(t.sid)||t.type==='配息存股';   // 長期領息：不強制停損、不套冷卻
+const taxRate=sid=>/^00\d+B$/i.test(sid)?0:/^00/.test(sid)?0.001:0.003;
+const DEF={equity:null,riskPct:1,maxPosPct:20,heatPct:6,cooldownDays:3,streakN:2,pledgeSafe:170,feeDisc:1,reviewDays:30};
+
+let D=null, KEY=null, SALT=null, ITER=310000, VAULT=null, NEWVAULT=false, PRICES={}, NAMES={}, PRICE_DATE='', dirty=false;
+const S=()=>D.settings;
+
+/* ========== 加密與載入（與財務規劃台同一種：PBKDF2-SHA256 → AES-GCM） ========== */
+const b64=u8=>btoa(String.fromCharCode(...u8));
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+async function derive(pass,salt,iter){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',hash:'SHA-256',salt,iterations:iter},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+}
+async function decryptVault(v,key){ const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(v.iv)},key,unb64(v.ct)); return JSON.parse(new TextDecoder().decode(pt)); }
+async function encryptData(){ const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},KEY,new TextEncoder().encode(JSON.stringify(D))));
+  return {v:1,kdf:'PBKDF2-SHA256',iter:ITER,salt:b64(SALT),iv:b64(iv),ct:b64(ct)}; }
+
+async function boot(){
+  try{ const r=await fetch('vault.json',{cache:'no-store'}); if(r.status===404) NEWVAULT=true; else VAULT=await r.json(); }
+  catch{ NEWVAULT=true; }
+  try{ const q=await (await fetch('../data.json',{cache:'no-store'})).json(); (q.stocks||[]).forEach(s=>{PRICES[s.id]=s.close;NAMES[s.id]=s.name}); (q.portfolio?.rows||[]).forEach(r=>{ if(r.price!=null) PRICES[r.id]=r.price; NAMES[r.id]=r.name; }); PRICE_DATE=q.updated_at||''; }catch{}
+  if(NEWVAULT){
+    // 第一次使用：看看這台裝置有沒有還沒同步的草稿
+    const draft=ls.get('jr.draft'); if(draft){ try{ VAULT=JSON.parse(draft); NEWVAULT=false; }catch{} }
+  }
+  if(NEWVAULT){ $('#lockHint').textContent='第一次使用：設定一組密碼來加密你的交易紀錄（可以跟財務規劃台用同一組）。密碼忘了資料就救不回來，請記好。'; $('#pw2').hidden=false; $('#lockGo').textContent='建立'; $('#pw').autocomplete='new-password'; $('#pw').focus(); return; }
+  const saved=ls.get('jr.key');
+  if(saved){ try{ const o=JSON.parse(saved); if(o.salt===VAULT.salt){ const k=await crypto.subtle.importKey('jwk',o.jwk,{name:'AES-GCM'},true,['encrypt','decrypt']); await unlockWith(k); return; } }catch{} }
+  $('#pw').focus();
+}
+async function unlockWith(key,fresh){
+  let data, msg='';
+  if(fresh){ data={schema:1,settings:{},trades:[]}; dirty=true; msg='已建立新的交易紀錄。先到「設定」填可投資總資產，記完第一筆後按「儲存」同步到 GitHub。'; }
+  else data=await decryptVault(VAULT,key);
+  KEY=key; SALT=fresh?SALT:unb64(VAULT.salt); ITER=fresh?ITER:VAULT.iter;
+  const draft=ls.get('jr.draft');
+  if(draft&&!fresh){ try{ const dv=JSON.parse(draft); if(dv.salt===b64(SALT)){ const dd=await decryptVault(dv,key); if((dd.savedAt||'')>(data.savedAt||'')){ data=dd; dirty=true; msg='這台裝置上有還沒同步的修改（本機草稿），已經載入。按「儲存」同步到 GitHub。'; } } }catch{} }
+  D=data; D.settings=Object.assign({},DEF,D.settings||{}); D.trades=D.trades||[];
+  $('#lock').hidden=true; $('#app').hidden=false;
+  buildNav(); showTab(ls.get('jr.tab')||'overview'); setDirty(dirty,''); showBanner(msg);
+}
+$('#lockf').addEventListener('submit',async e=>{ e.preventDefault();
+  const p=$('#pw').value;
+  if(NEWVAULT){
+    if(p.length<6){ $('#pwerr').textContent='密碼至少 6 個字。'; return; }
+    if(p!==$('#pw2').value){ $('#pwerr').textContent='兩次密碼不一樣。'; return; }
+    $('#pwerr').textContent='建立中…';
+    SALT=crypto.getRandomValues(new Uint8Array(16)); const k=await derive(p,SALT,ITER);
+    if($('#remember').checked) ls.set('jr.key',JSON.stringify({salt:b64(SALT),jwk:await crypto.subtle.exportKey('jwk',k)}));
+    NEWVAULT=false; await unlockWith(k,true); $('#pwerr').textContent=''; return;
+  }
+  $('#pwerr').textContent='解鎖中…';
+  try{ const k=await derive(p,unb64(VAULT.salt),VAULT.iter); await unlockWith(k);
+    if($('#remember').checked) ls.set('jr.key',JSON.stringify({salt:VAULT.salt,jwk:await crypto.subtle.exportKey('jwk',k)}));
+    $('#pwerr').textContent=''; $('#pw').value='';
+  }catch{ $('#pwerr').textContent='密碼不對。'; }
+});
+$('#lockBtn').onclick=()=>{ ls.del('jr.key'); location.reload(); };
+function showBanner(t){ const b=$('#banner'); b.textContent=t; b.hidden=!t; }
+
+/* ========== 儲存（金鑰與財務規劃台共用：同一個網站、同一把只能寫這個 repo 的金鑰） ========== */
+function repoName(){ const r=ls.get('fin.repo'); if(r) return r; const h=location.hostname.match(/^([^.]+)\.github\.io$/); const p=location.pathname.split('/').filter(Boolean)[0]; return h&&p?`${h[1]}/${p}`:'a0981755429-debug/tw-stock-cloud'; }
+let draftT=null;
+function setDirty(v,state){ dirty=v; const st=$('#savest');
+  if(v){ st.textContent='本機草稿（尚未同步）'; clearTimeout(draftT); draftT=setTimeout(saveDraft,600); } else if(state!=null) st.textContent=state; }
+async function saveDraft(){ D.savedAt=new Date().toISOString(); ls.set('jr.draft',JSON.stringify(await encryptData())); }
+function changed(){ setDirty(true); }
+$('#saveBtn').onclick=async()=>{
+  D.savedAt=new Date().toISOString();
+  const v=await encryptData(); const body=JSON.stringify(v)+'\n'; const tok=ls.get('fin.token');
+  if(!tok){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type:'application/json'})); a.download='vault.json'; a.click();
+    ls.set('jr.draft',body); clearTimeout(draftT); dirty=false; $('#savest').textContent='已下載備份（還沒設定金鑰，GitHub 上沒有更新）'; return; }
+  $('#savest').textContent='同步中…';
+  const api=`https://api.github.com/repos/${repoName()}/contents/docs/journal/vault.json`;
+  const H={Authorization:'Bearer '+tok,Accept:'application/vnd.github+json'};
+  try{
+    const cur=await fetch(api+'?ref=main',{headers:H,cache:'no-store'}); const sha=cur.ok?(await cur.json()).sha:undefined;
+    const r=await fetch(api,{method:'PUT',headers:H,body:JSON.stringify({message:'更新交易紀錄 '+TODAY,content:btoa(body),sha,branch:'main'})});
+    if(!r.ok) throw new Error(r.status);
+    VAULT=v; ls.del('jr.draft'); clearTimeout(draftT); showBanner(''); dirty=false;
+    $('#savest').textContent='已同步到 GitHub '+new Date().toTimeString().slice(0,5);
+  }catch(e){ const m={401:'金鑰錯誤或過期',403:'金鑰沒有寫入權限（Contents 要選 Read and write）',404:'金鑰沒有勾到這個 repo'}[e.message]||e.message; $('#savest').textContent='同步失敗：'+m+'。修改留在本機草稿。'; }
+};
+window.addEventListener('beforeunload',e=>{ if(dirty){ saveDraft(); } });
+
+/* ========== 計算：部位、損益 ========== */
+function feeOf(sid,shares,price){ const amt=shares*price; if(!amt) return 0; const f=Math.floor(amt*0.001425*(S().feeDisc||1)); return Math.max(shares%1000===0?20:1,f); }
+function taxOf(sid,shares,price){ return Math.floor(shares*price*taxRate(sid)); }
+function pos(t){
+  let sh=0,basis=0,realized=0,bought=0,first=null,last=null,sold=false;
+  for(const f of [...(t.fills||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||''))){
+    const n=+f.shares||0,p=+f.price||0,fee=+f.fee||0,tax=+f.tax||0;
+    if(f.side==='買'){ sh+=n; basis+=n*p+fee; bought+=n*p+fee; first=first||f.date; }
+    else if(sh>0){ const q=Math.min(n,sh), avg=basis/sh; realized+=q*p-fee-tax-avg*q; basis-=avg*q; sh-=q; sold=true; last=f.date; }
+  }
+  return {shares:sh,basis,avg:sh?basis/sh:null,realized,bought,first,last,sold};
+}
+function statusOf(t){ if(t.dropped) return '放棄'; const p=pos(t); if(!(t.fills||[]).length) return '想法'; if(p.shares>0) return p.sold?'部分出場':'持有'; return '結案'; }
+const isOpen=t=>{const s=statusOf(t);return s==='持有'||s==='部分出場'};
+const priceOf=t=>num(t.px)??PRICES[t.sid]??(()=>{const f=(t.fills||[]).filter(f=>f.price);return f.length?+f[f.length-1].price:null})();
+function closedTrades(){ return D.trades.filter(t=>statusOf(t)==='結案').map(t=>{const p=pos(t);return {t,p,ret:p.bought?p.realized/p.bought:0,days:p.first&&p.last?daysBetween(p.first,p.last):null}}); }
+function lossExits(){ // 虧損出場（含部分出場那次賣在成本以下）
+  const out=[];
+  for(const t of D.trades){ let sh=0,basis=0;
+    for(const f of [...(t.fills||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||''))){
+      const n=+f.shares||0,p=+f.price||0;
+      if(f.side==='買'){ sh+=n; basis+=n*p+(+f.fee||0); }
+      else if(sh>0){ const q=Math.min(n,sh),avg=basis/sh,r=q*p-(+f.fee||0)-(+f.tax||0)-avg*q; basis-=avg*q; sh-=q; if(r<0) out.push({t,date:f.date,r}); }
+    } }
+  return out.sort((a,b)=>b.date.localeCompare(a.date));
+}
+function cooldown(){ // 回傳 {until, why} 或 null
+  const L=lossExits().filter(x=>!longHold(x.t)); if(!L.length) return null;
+  const s=S(), until=addDays(L[0].date,s.cooldownDays||0);
+  if((s.cooldownDays||0)>0&&until>TODAY) return {until,why:`${L[0].date} ${L[0].t.sid} ${L[0].t.name||''} 虧損出場`};
+  return null;
+}
+function lossStreak(){ // 最近連續幾筆結案是虧的（個股）
+  const C=closedTrades().filter(x=>!longHold(x.t)).sort((a,b)=>(b.p.last||'').localeCompare(a.p.last||'')); let n=0;
+  for(const c of C){ if(c.p.realized<0) n++; else break; } return n;
+}
+function heat(excludeId){ // 開倉總風險：現價跌到停損會賠多少
+  let r=0; for(const t of D.trades){ if(t.id===excludeId||!isOpen(t)||num(t.stop)==null) continue; const p=pos(t), c=priceOf(t); if(c==null) continue; r+=Math.max(0,c-+t.stop)*p.shares; } return r;
+}
+function posValue(sid,excludeId){ let v=0; for(const t of D.trades){ if(t.sid!==sid||t.id===excludeId||!isOpen(t)) continue; const c=priceOf(t); if(c!=null) v+=c*pos(t).shares; } return v; }
+
+/* ========== 部位計算機 ========== */
+function sizer(f){ // f: {sid, price, stop, targetPct, long}
+  const s=S(), E=num(s.equity), P=num(f.price), out={rows:[],shares:null,binding:'',note:''};
+  if(!E){ out.note='先到「設定」填可投資總資產，才算得出該買多少。'; return out; }
+  if(!P){ out.note='填買進價格後會算出建議股數。'; return out; }
+  const have=posValue(f.sid,f.selfId);
+  const cands=[];
+  if(f.long&&num(f.targetPct)!=null){
+    const goal=E*num(f.targetPct)/100, gap=goal-have;
+    out.rows.push(['目標配置',`${f.targetPct}% × 總資產 = ${fmt(goal)}`],['目前市值',fmt(have)],['還差',fmt(Math.max(0,gap))]);
+    cands.push({n:Math.floor(Math.max(0,gap)/P),why:'補到目標配置'});
+  }
+  const st=num(f.stop);
+  if(st!=null&&st<P){
+    const budget=E*(s.riskPct||1)/100, per=P-st;
+    out.rows.push(['每筆最多賠',`${s.riskPct}% × 總資產 = ${fmt(budget)}`],['每股風險',`${px(P)} − ${px(st)} = ${px(per)}`]);
+    cands.push({n:Math.floor(budget/per),why:`每筆風險 ${s.riskPct}%`});
+  }
+  if(!f.long){ const cap=E*(s.maxPosPct||100)/100-have; out.rows.push(['單一個股上限',`${s.maxPosPct}% = ${fmt(E*s.maxPosPct/100)}（已持有 ${fmt(have)}）`]); cands.push({n:Math.floor(Math.max(0,cap)/P),why:`單一個股上限 ${s.maxPosPct}%`}); }
+  if(!cands.length){ out.note=f.long?'填目標配置 % 或停損價，才算得出建議股數。':'填停損價後會用「每筆最多賠 1%」算出股數。'; return out; }
+  const best=cands.reduce((a,b)=>b.n<a.n?b:a);
+  out.shares=best.n; out.binding=cands.length>1?best.why:'';
+  return out;
+}
+const lots=n=>n==null?'—':n>=1000?`${Math.floor(n/1000)} 張${n%1000?` ＋ ${n%1000} 股`:''}`:`${n} 股（零股）`;
+
+/* ========== 下單前檢查（紀律關卡） ========== */
+function gate(f){ // f: 表單內容；回傳 {result:'可以'|'再想想'|'不要', items:[{lv,txt}]}
+  const s=S(), it=[], add=(lv,txt)=>it.push({lv,txt});
+  const P=num(f.price), N=num(f.shares)||0, st=num(f.stop), E=num(s.equity);
+  (f.thesis||'').trim().length>=4?add('ok','寫了買進理由'):add('hard','還沒寫「為什麼買」');
+  (f.wrongIf||'').trim().length>=4?add('ok','寫了「什麼情況代表我錯了」'):add('hard','還沒寫「什麼情況代表我錯了」（出場條件）');
+  if(!f.long){
+    if(st==null) add('hard','個股沒有先定停損價');
+    else if(P!=null&&st>=P) add('hard','停損價要低於買進價');
+    else add('ok','停損價先定好了');
+  } else add('ok',st!=null?'停損價先定好了':'長期領息標的：不強制停損');
+  f.planned?add('ok','是事先計畫好的'):add('soft','不是事先計畫的，是看盤當下臨時起意');
+  if(f.pledged){
+    const m=num(f.margin);
+    if(m==null) add('hard','用質押或借來的錢，但沒填買完後的維持率');
+    else if(m<s.pledgeSafe) add('hard',`買完後質押維持率 ${m}% 低於你的安全線 ${s.pledgeSafe}%`);
+    else add('ok',`買完後質押維持率 ${m}%，高於安全線 ${s.pledgeSafe}%`);
+  }
+  if(!E) add('soft','還沒在「設定」填可投資總資產，沒辦法檢查部位大小');
+  else if(P&&N){
+    if(st!=null&&st<P){ const risk=(P-st)*N, b=E*s.riskPct/100;
+      risk>b*1.001?add('soft',`這筆最多賠 ${fmt(risk)}，超過每筆上限 ${fmt(b)}（${s.riskPct}%）`):add('ok',`這筆最多賠 ${fmt(risk)}，在每筆上限 ${fmt(b)} 內`);
+      const h=heat(f.selfId)+risk, hb=E*s.heatPct/100;
+      h>hb?add('soft',`所有持股一起跌到停損會賠 ${fmt(h)}，超過總風險上限 ${s.heatPct}%（${fmt(hb)}）`):add('ok',`所有持股的總風險 ${pct(h/E)}，在上限 ${s.heatPct}% 內`);
+    }
+    const w=(posValue(f.sid,f.selfId)+P*N)/E;
+    if(!f.long&&w>s.maxPosPct/100) add('soft',`買完後 ${f.sid} 占總資產 ${pct(w)}，超過單一個股上限 ${s.maxPosPct}%`);
+    if(f.long&&num(f.targetPct)!=null&&w>num(f.targetPct)/100+0.005) add('soft',`買完後占 ${pct(w)}，超過你設的目標配置 ${f.targetPct}%`);
+  }
+  if(!f.long){
+    const cd=cooldown(); cd?add('hard',`冷卻中到 ${cd.until}：${cd.why}，先別急著扳回來`):null;
+    const ls_=lossStreak(); ls_>=s.streakN?add('soft',`個股已經連虧 ${ls_} 筆，先回頭看看這幾筆的檢討`):null;
+  }
+  const result=it.some(x=>x.lv==='hard')?'不要':it.some(x=>x.lv==='soft')?'再想想':'可以';
+  return {result,items:it};
+}
+const VCLS={可以:'good',再想想:'warn',不要:'bad'};
+function gateHtml(g){
+  const ic={ok:'✓',soft:'!',hard:'✕'};
+  return `<ul class="checks">${g.items.map(x=>`<li class="${x.lv}"><span class="ic">${ic[x.lv]}</span><span>${esc(x.txt)}</span></li>`).join('')}</ul>
+  <div class="verdict ${VCLS[g.result]}"><span class="big">${g.result==='可以'?'✅':g.result==='再想想'?'⚠️':'⛔'}</span><span>${g.result==='可以'?'可以下單':g.result==='再想想'?'再想想：有幾項超出你自己的規則':'不要下：有關鍵項目沒過'}</span></div>`;
+}
+
+/* ========== 分頁 ========== */
+const TABS=[['overview','總覽'],['new','記一筆'],['list','紀錄'],['stats','檢討'],['settings','設定']];
+function buildNav(){ $('#gnav').innerHTML=TABS.map(([k,n])=>`<button role="tab" data-t="${k}">${n}</button>`).join(''); $$('#gnav button').forEach(b=>b.onclick=()=>showTab(b.dataset.t)); }
+function showTab(t,arg){ if(!TABS.some(x=>x[0]===t)) t='overview'; ls.set('jr.tab',t);
+  $$('#gnav button').forEach(b=>b.setAttribute('aria-selected',b.dataset.t===t)); $$('main>section').forEach(s=>s.hidden=s.dataset.tab!==t);
+  ({overview:renderOverview,new:renderNew,list:renderList,stats:renderStats,settings:renderSettings})[t](arg); window.scrollTo(0,0); }
+function toast(msg){ const el=$('#toast'); el.textContent=msg; el.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>el.hidden=true,4000); }
+
+/* ---- 總覽 ---- */
+function renderOverview(){
+  const s=S(), E=num(s.equity), open=D.trades.filter(isOpen), due=D.trades.filter(t=>(isOpen(t)||statusOf(t)==='想法')&&t.nextReview&&t.nextReview<=TODAY);
+  const broke=open.filter(t=>{const c=priceOf(t);return num(t.stop)!=null&&c!=null&&c<=+t.stop});
+  const h=heat(), cd=cooldown(), C=closedTrades(), win=C.filter(c=>c.p.realized>0).length;
+  const el=$('[data-tab=overview]');
+  el.innerHTML=`
+  ${!E?`<div class="card"><h2>先做一件事</h2><p class="hint">到「設定」填你的可投資總資產（股票＋準備投入的現金）。部位計算和風險檢查都靠它。</p><button class="btn primary" id="goSet">去設定</button></div>`:''}
+  <div class="kpis">
+    <div class="kpi ${due.length?'warn':''}"><div class="l">今天該檢討</div><div class="v">${due.length} 筆</div><div class="n">到了你設的檢討日</div></div>
+    <div class="kpi ${broke.length?'bad':''}"><div class="l">跌破停損</div><div class="v">${broke.length} 筆</div><div class="n">價格 ${PRICE_DATE?'更新於 '+esc(PRICE_DATE):'來自自選股'}</div></div>
+    <div class="kpi ${E&&h/E>s.heatPct/100?'bad':''}"><div class="l">總風險（全部跌到停損）</div><div class="v">${E?pct(h/E):'—'}</div><div class="n">上限 ${s.heatPct}%</div></div>
+    <div class="kpi ${cd?'warn':''}"><div class="l">個股冷卻</div><div class="v">${cd?'冷卻中':'正常'}</div><div class="n">${cd?'到 '+cd.until+'，'+esc(cd.why):'最近沒有虧損出場'}</div></div>
+    <div class="kpi"><div class="l">已結案勝率</div><div class="v">${C.length?pct(win/C.length,0):'—'}</div><div class="n">${C.length} 筆結案</div></div>
+  </div>
+  <div class="card"><h2>該檢討的</h2>${due.length?due.map(rowHtml).join(''):'<div class="empty">沒有到期的檢討。</div>'}</div>
+  ${broke.length?`<div class="card"><h2>跌破你寫的停損</h2><p class="hint">當初你說跌到這裡就代表錯了。照計畫出場，或寫下為什麼要改。</p>${broke.map(rowHtml).join('')}</div>`:''}
+  <div class="card"><h2>持有中 <span class="st">${open.length} 筆</span></h2>${open.length?open.map(rowHtml).join(''):'<div class="empty">還沒有持有中的紀錄。到「記一筆」新增，現有持股選「補記既有持股」。</div>'}</div>`;
+  $('#goSet')&&($('#goSet').onclick=()=>showTab('settings'));
+  bindRows(el);
+}
+function rowHtml(t){
+  const p=pos(t), c=priceOf(t), st=statusOf(t), r=p.avg&&c!=null?c/p.avg-1:null;
+  const due=t.nextReview&&t.nextReview<=TODAY&&(isOpen(t)||st==='想法');
+  const right=st==='結案'?`<span class="${cls(p.realized)}">${spct(p.bought?p.realized/p.bought:null)}</span><span class="st">${fmt(p.realized)}</span>`
+    :isOpen(t)?`<span class="${cls(r)}">${spct(r)}</span><span class="st">現價 ${px(c)}</span>`:`<span class="st">${st}</span>`;
+  return `<details class="tr" data-id="${t.id}"><summary><div class="nm"><b>${esc(t.sid)} ${esc(t.name||'')}</b>
+    <span class="st">${esc(t.type)} · ${st}${due?' · <span class="pill warn">該檢討</span>':''}${t.gate&&t.gate.result!=='可以'&&t.gate.result!=='補記'?` · <span class="pill ${VCLS[t.gate.result]}">${t.gate.result}</span>`:''}</span></div>
+    <div class="rt">${right}</div></summary><div class="bd"></div></details>`;
+}
+function bindRows(root){ $$('.tr',root).forEach(d=>d.addEventListener('toggle',()=>{ if(d.open) renderDetail(d); })); }
+
+/* ---- 單筆明細：加減碼、檢討、結案心得 ---- */
+function renderDetail(d){
+  const t=D.trades.find(x=>x.id===d.dataset.id); if(!t) return;
+  const p=pos(t), c=priceOf(t), st=statusOf(t), bd=$('.bd',d);
+  const r=p.avg&&c!=null?c/p.avg-1:null;
+  bd.innerHTML=`
+   <div class="sub2">為什麼買</div><div class="quote">${esc(t.thesis)||'—'}</div>
+   <div class="sub2">什麼情況代表我錯了</div><div class="quote">${esc(t.wrongIf)||'—'}</div>
+   <div class="lines" style="margin-top:8px">
+     ${isOpen(t)?`<div><span>持有</span><span>${lots(p.shares)}</span></div><div><span>均價（含手續費）</span><span>${px(p.avg)}</span></div><div><span>現價</span><span>${px(c)}${PRICES[t.sid]==null?' <span class="tag">手動</span>':''}</span></div><div><span>未實現</span><span class="${cls(r)}">${fmt(c!=null?(c-p.avg)*p.shares:null)}（${spct(r)}）</span></div>`:''}
+     <div><span>已實現</span><span class="${cls(p.realized)}">${fmt(p.realized)}</span></div>
+     <div><span>停損 / 目標</span><span>${px(t.stop)} / ${px(t.target)}${t.targetPct?` · 目標配置 ${t.targetPct}%`:''}</span></div>
+     <div><span>下次檢討</span><span>${t.nextReview||'—'}（每 ${t.reviewDays||S().reviewDays} 天）</span></div>
+     <div><span>下單前關卡</span><span>${t.gate?esc(t.gate.result)+(t.gate.override?'（沒過還是下了）':''):'—'}</span></div>
+   </div>
+   ${PRICES[t.sid]==null&&isOpen(t)?`<div class="form" style="margin-top:8px"><label>手動現價（不在自選股裡）<input class="n" data-f="px" value="${t.px??''}" inputmode="decimal"></label></div>`:''}
+   <div class="sub2">成交紀錄</div>
+   <div class="tbl"><table><thead><tr><th>日期</th><th>買賣</th><th class="r">股數</th><th class="r">價格</th><th class="r">手續費</th><th class="r">稅</th><th></th></tr></thead><tbody>
+   ${(t.fills||[]).map((f,i)=>`<tr><td>${esc(f.date)}</td><td>${f.side}</td><td class="r num">${fmt(f.shares)}</td><td class="r num">${px(f.price)}</td><td class="r num">${fmt(f.fee)}</td><td class="r num">${fmt(f.tax)}</td><td><button class="btn ghost sm" data-delfill="${i}">刪</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">還沒有成交（目前是想法）</td></tr>'}
+   </tbody></table></div>
+   ${st!=='結案'&&st!=='放棄'?`
+   <div class="sub2">新增成交</div>
+   <div class="form fillf">
+     <label>買或賣<select data-k="side"><option>買</option><option${p.shares>0?' selected':''}>賣</option></select></label>
+     <label>日期<input type="date" data-k="date" value="${TODAY}"></label>
+     <label>股數<input data-k="shares" inputmode="numeric" value="${p.shares>0?p.shares:''}"></label>
+     <label>價格<input data-k="price" inputmode="decimal" value="${c??''}"></label>
+   </div>
+   <div class="gatebox"></div>
+   <div class="row"><button class="btn primary sm" data-act="fill">記下成交</button></div>`:''}
+   <div class="sub2">檢討紀錄</div>
+   ${(t.reviews||[]).map(v=>`<div class="quote"><b>${esc(v.date)} ${esc(v.verdict)}</b>　${esc(v.note)}</div>`).join('')||'<div class="st">還沒檢討過</div>'}
+   ${st!=='結案'&&st!=='放棄'?`<div class="form" style="margin-top:6px">
+     <label>現在的判斷<select data-r="verdict"><option>照原計畫</option><option>理由變了，要注意</option><option>理由不成立，該出場</option></select></label>
+     <label class="full">寫幾句（買進理由還成立嗎？發生了什麼？）<textarea data-r="note"></textarea></label></div>
+     <div class="row"><button class="btn sm" data-act="review">記下檢討，下次 ${addDays(TODAY,+(t.reviewDays||S().reviewDays))}</button>${st==='想法'?'<button class="btn ghost sm" data-act="drop">放棄這個想法</button>':''}</div>`:''}
+   ${st==='結案'?`<div class="sub2">結案心得：這筆學到什麼？下次會怎麼做？</div><textarea data-f="lesson">${esc(t.lesson||'')}</textarea>`:''}
+   <div class="row"><button class="btn ghost sm" data-act="del">刪除這筆</button></div>`;
+  const fillF=()=>{ const o={}; $$('.fillf [data-k]',bd).forEach(i=>o[i.dataset.k]=i.value); return o; };
+  const upd=()=>{ const box=$('.gatebox',bd); if(!box) return; const o=fillF();
+    if(o.side==='買'){ const g=gate({...t,long:longHold(t),price:o.price,shares:o.shares,planned:true,selfId:null}); box.innerHTML='<div class="sub2">加碼前檢查</div>'+gateHtml(g); }
+    else { const n=num(o.shares),q=num(o.price); box.innerHTML=n&&q?`<p class="st">預估手續費 ${fmt(feeOf(t.sid,n,q))}、證交稅 ${fmt(taxOf(t.sid,n,q))}（${(taxRate(t.sid)*100).toFixed(1)}%）${n>p.shares?'。股數超過持有，會以持有股數計':''}</p>`:''; } };
+  $$('.fillf [data-k]',bd).forEach(i=>i.addEventListener('input',upd)); upd();
+  $$('[data-f]',bd).forEach(i=>i.addEventListener('change',()=>{ t[i.dataset.f]=i.dataset.f==='px'?num(i.value):i.value; changed(); if(i.dataset.f==='px') rerender(); }));
+  $$('[data-delfill]',bd).forEach(b=>b.onclick=()=>{ if(b.dataset.sure){ t.fills.splice(+b.dataset.delfill,1); changed(); rerender(); } else { b.dataset.sure=1; b.textContent='確定？'; } });
+  bd.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{
+    const a=b.dataset.act;
+    if(a==='fill'){ const o=fillF(), n=num(o.shares), q=num(o.price); if(!n||!q){ toast('填股數和價格'); return; }
+      const sh=o.side==='賣'?Math.min(n,p.shares):n; if(o.side==='賣'&&!sh){ toast('沒有持股可以賣'); return; }
+      t.fills.push({date:o.date||TODAY,side:o.side,shares:sh,price:q,fee:feeOf(t.sid,sh,q),tax:o.side==='賣'?taxOf(t.sid,sh,q):0});
+      if(!t.nextReview) t.nextReview=addDays(TODAY,+(t.reviewDays||S().reviewDays));
+      changed(); toast(statusOf(t)==='結案'?'已結案，記得寫結案心得':'已記下成交'); rerender(t.id); }
+    if(a==='review'){ const v=$('[data-r=verdict]',bd).value, n=$('[data-r=note]',bd).value.trim(); t.reviews=t.reviews||[]; t.reviews.push({date:TODAY,verdict:v,note:n}); t.nextReview=addDays(TODAY,+(t.reviewDays||S().reviewDays)); changed(); toast('已記下檢討'); rerender(t.id); }
+    if(a==='drop'){ t.dropped=true; changed(); rerender(); }
+    if(a==='del'){ if(b.dataset.sure){ D.trades=D.trades.filter(x=>x!==t); changed(); rerender(); } else { b.dataset.sure=1; b.textContent='再按一次確定刪除'; } }
+  });
+}
+function rerender(openId){ const t=$('#gnav [aria-selected=true]').dataset.t; showTab(t); if(openId){ const d=$(`main section:not([hidden]) .tr[data-id="${openId}"]`); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } } }
+
+/* ---- 記一筆：表單＋部位計算＋關卡 ---- */
+let NF=null;
+function renderNew(){
+  const s=S();
+  NF=NF||{mode:'buy',sid:'',name:'',type:'成長',thesis:'',wrongIf:'',stop:'',target:'',targetPct:'',reviewDays:s.reviewDays,date:TODAY,price:'',shares:'',planned:false,pledged:false,margin:'',override:false};
+  const opts=Object.keys(NAMES).map(id=>`<option value="${id}">${esc(NAMES[id])}</option>`).join('');
+  $('[data-tab=new]').innerHTML=`
+  <div class="card"><h2>記一筆</h2>
+    <div class="seg" id="modes">${[['buy','現在要買'],['idea','先記想法'],['backfill','補記既有持股']].map(([k,n])=>`<button class="btn sm ${NF.mode===k?'on':''}" data-m="${k}">${n}</button>`).join('')}</div>
+    <p class="hint" style="margin-top:8px">${NF.mode==='buy'?'下單前填完，下面會算出該買多少、檢查有沒有違反你自己的規則。':NF.mode==='idea'?'先把理由寫下來，隔天再決定要不要買，就算「事先計畫」。':'把已經持有的股票補記進來，不跑下單前檢查。理由和出場條件還是要寫，之後檢討才有東西對照。'}</p>
+    <div class="form">
+      <label>代號<input id="nf-sid" list="sids" value="${esc(NF.sid)}" inputmode="numeric" placeholder="2317"><datalist id="sids">${opts}</datalist></label>
+      <label>名稱<input id="nf-name" value="${esc(NF.name)}"></label>
+      <label>類型<select id="nf-type">${TYPES.map(x=>`<option${NF.type===x?' selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="full">為什麼買（看到什麼？預期會發生什麼？）<textarea id="nf-thesis" placeholder="例：AI 伺服器營收連 3 個月年增 30% 以上，法說上修全年展望">${esc(NF.thesis)}</textarea></label>
+      <label class="full">什麼情況代表我錯了（就出場）<textarea id="nf-wrongIf" placeholder="例：月營收轉年減，或跌破 180 季線">${esc(NF.wrongIf)}</textarea></label>
+      <label>停損價<input id="nf-stop" value="${esc(NF.stop)}" inputmode="decimal"></label>
+      <label>目標價（選填）<input id="nf-target" value="${esc(NF.target)}" inputmode="decimal"></label>
+      <label class="lh">目標配置 %（存股用）<input id="nf-targetPct" value="${esc(NF.targetPct)}" inputmode="decimal" placeholder="例：30"></label>
+      <label>每幾天檢討一次<input id="nf-reviewDays" value="${esc(NF.reviewDays)}" inputmode="numeric"></label>
+    </div>
+    ${NF.mode!=='idea'?`<h3>成交</h3><div class="form">
+      <label>日期<input type="date" id="nf-date" value="${esc(NF.date)}"></label>
+      <label>價格<input id="nf-price" value="${esc(NF.price)}" inputmode="decimal"></label>
+      <label>股數<input id="nf-shares" value="${esc(NF.shares)}" inputmode="numeric" placeholder="1 張 = 1000 股"></label>
+    </div>`:''}
+    ${NF.mode==='buy'?`<h3>資金與心態</h3>
+    <label class="st" style="display:block;font-size:14px;color:var(--ink)"><input type="checkbox" id="nf-planned"${NF.planned?' checked':''}> 這筆是事先計畫的（前一天以前就寫好理由），不是盤中臨時起意</label>
+    <label class="st" style="display:block;font-size:14px;color:var(--ink);margin-top:6px"><input type="checkbox" id="nf-pledged"${NF.pledged?' checked':''}> 這筆用的是質押或借來的錢</label>
+    ${NF.pledged?`<div class="form" style="margin-top:6px"><label>買完後的質押維持率 %<input id="nf-margin" value="${esc(NF.margin)}" inputmode="decimal" placeholder="券商 App 可查"></label></div>`:''}`:''}
+  </div>
+  ${NF.mode!=='idea'?`<div class="card" id="szCard"></div>`:''}
+  ${NF.mode==='buy'?`<div class="card" id="gtCard"></div>`:''}
+  <div class="card"><div class="row" style="margin-top:0"><button class="btn primary" id="nf-save">記下來</button><span class="st" id="nf-msg"></span></div></div>`;
+  $$('#modes button').forEach(b=>b.onclick=()=>{ NF.mode=b.dataset.m; renderNew(); });
+  const bind=(id,k,ev='input')=>{ const el=$('#nf-'+id); if(!el) return; el.addEventListener(ev,()=>{ NF[k]=el.type==='checkbox'?el.checked:el.value; if(k==='sid'){ const n=NAMES[el.value.trim()]; if(n){ NF.name=n; $('#nf-name').value=n; } if(isEtf(el.value)&&NF.type!=='配息存股'){ NF.type='配息存股'; $('#nf-type').value='配息存股'; } } if(k==='pledged') { renderNew(); return; } liveNew(); }); };
+  ['sid','name','thesis','wrongIf','stop','target','targetPct','reviewDays','date','price','shares','margin'].forEach(k=>bind(k,k));
+  bind('type','type','change'); bind('planned','planned','change'); bind('pledged','pledged','change');
+  $('#nf-save').onclick=saveNew;
+  liveNew();
+}
+function nfForm(){ return {...NF,sid:NF.sid.trim(),long:longHold({sid:NF.sid.trim(),type:NF.type})}; }
+function liveNew(){
+  const f=nfForm();
+  $$('.lh').forEach(l=>l.style.opacity=f.long?1:.5);
+  const sz=$('#szCard');
+  if(sz){ const z=sizer(f);
+    sz.innerHTML=`<h2>該買多少</h2>${z.rows.length?`<div class="lines">${z.rows.map(r=>`<div><span>${r[0]}</span><span>${r[1]}</span></div>`).join('')}${z.shares!=null?`<div class="tot"><span>建議最多</span><span>${lots(z.shares)}${z.shares&&num(f.price)?`（約 ${fmt(z.shares*f.price)}）`:''}</span></div>`:''}</div>`:''}
+      ${z.binding?`<p class="st">卡在「${esc(z.binding)}」這條規則。</p>`:''}${z.note?`<p class="hint" style="margin:6px 0 0">${esc(z.note)}</p>`:''}
+      ${z.shares?`<div class="row"><button class="btn sm" id="useSz">帶入 ${z.shares>=1000?Math.floor(z.shares/1000)*1000+' 股（整張）':z.shares+' 股'}</button>${z.shares>=1000&&z.shares%1000?`<button class="btn sm" id="useSz2">帶入 ${z.shares} 股（含零股）</button>`:''}</div>`:''}`;
+    const put=n=>{ NF.shares=String(n); $('#nf-shares').value=n; liveNew(); };
+    $('#useSz')&&($('#useSz').onclick=()=>put(z.shares>=1000?Math.floor(z.shares/1000)*1000:z.shares));
+    $('#useSz2')&&($('#useSz2').onclick=()=>put(z.shares));
+  }
+  const gc=$('#gtCard');
+  if(gc){ const g=gate(f);
+    gc.innerHTML=`<h2>下單前檢查</h2><p class="hint">照你自己在「設定」定的規則檢查。沒過也可以記，但會被標記，檢討時會分開算這些交易的成績。</p>${gateHtml(g)}
+     ${g.result!=='可以'?`<label class="st" style="display:block;margin-top:8px;font-size:14px;color:var(--ink)"><input type="checkbox" id="nf-override"${NF.override?' checked':''}> 我知道沒過關卡，還是要下</label>`:''}`;
+    $('#nf-override')&&$('#nf-override').addEventListener('change',e=>{NF.override=e.target.checked; liveSave();});
+  }
+  liveSave();
+}
+function liveSave(){ const b=$('#nf-save'); if(!b) return; const f=nfForm();
+  if(NF.mode==='buy'){ const g=gate(f); b.textContent=g.result==='可以'?'記下來':NF.override?'還是要記（標記為沒過關）':'記下來'; b.disabled=g.result!=='可以'&&!NF.override; b.style.opacity=b.disabled?.5:1; }
+  else { b.disabled=false; b.style.opacity=1; b.textContent='記下來'; } }
+function saveNew(){
+  const f=nfForm(), msg=$('#nf-msg');
+  if(!/^\w{4,6}$/.test(f.sid)){ msg.textContent='代號要 4～6 碼'; return; }
+  if(NF.mode!=='idea'&&(!num(f.price)||!num(f.shares))){ msg.textContent='填成交價格和股數'; return; }
+  const t={id:uid(),sid:f.sid,name:f.name.trim()||NAMES[f.sid]||'',type:f.type,created:TODAY,thesis:f.thesis.trim(),wrongIf:f.wrongIf.trim(),
+    stop:num(f.stop),target:num(f.target),targetPct:f.long?num(f.targetPct):null,reviewDays:num(f.reviewDays)||S().reviewDays,
+    planned:NF.mode==='buy'?f.planned:NF.mode==='backfill'?null:true,pledged:!!f.pledged,fills:[],reviews:[]};
+  if(NF.mode==='buy'){ const g=gate(f); t.gate={result:g.result,fails:g.items.filter(x=>x.lv!=='ok').map(x=>x.txt),override:g.result!=='可以'}; }
+  if(NF.mode==='backfill') t.gate={result:'補記',fails:[],override:false};
+  if(NF.mode!=='idea'){ const n=num(f.shares),q=num(f.price); t.fills.push({date:f.date||TODAY,side:'買',shares:n,price:q,fee:feeOf(t.sid,n,q),tax:0}); }
+  t.nextReview=addDays(NF.mode==='idea'?TODAY:(f.date||TODAY),NF.mode==='idea'?1:t.reviewDays);
+  D.trades.unshift(t); NF=null; changed(); toast('已記下 '+t.sid+'，記得按右上角「儲存」'); showTab('list'); rerender(t.id);
+}
+
+/* ---- 紀錄 ---- */
+let LF='全部';
+function renderList(){
+  const groups=['全部','持有','想法','結案','放棄'];
+  const pick=t=>{const s=statusOf(t);return LF==='全部'||s===LF||(LF==='持有'&&s==='部分出場')};
+  const L=D.trades.filter(pick);
+  const el=$('[data-tab=list]');
+  el.innerHTML=`<div class="card"><h2>所有紀錄 <span class="st">${D.trades.length} 筆</span></h2>
+   <div class="chips">${groups.map(g=>`<button class="btn sm ${LF===g?'on':''}" data-g="${g}">${g}</button>`).join('')}</div>
+   ${L.length?L.map(rowHtml).join(''):'<div class="empty">這裡還沒有紀錄。</div>'}</div>`;
+  $$('[data-g]',el).forEach(b=>b.onclick=()=>{LF=b.dataset.g;renderList();});
+  bindRows(el);
+}
+
+/* ---- 檢討（績效） ---- */
+function agg(rows){ const n=rows.length; if(!n) return null; const W=rows.filter(r=>r.p.realized>0), L=rows.filter(r=>r.p.realized<=0);
+  const avg=a=>a.length?a.reduce((s,r)=>s+r.ret,0)/a.length:null, d=rows.filter(r=>r.days!=null);
+  return {n,win:W.length/n,avg:avg(rows),aw:avg(W),al:avg(L),pnl:rows.reduce((s,r)=>s+r.p.realized,0),days:d.length?d.reduce((s,r)=>s+r.days,0)/d.length:null}; }
+function aggRow(name,a){ return a?`<tr><td>${esc(name)}</td><td class="r num">${a.n}</td><td class="r num">${pct(a.win,0)}</td><td class="r num ${cls(a.avg)}">${spct(a.avg)}</td><td class="r num">${a.aw!=null&&a.al?(-a.aw/a.al).toFixed(2):'—'}</td><td class="r num ${cls(a.pnl)}">${fmt(a.pnl)}</td><td class="r num">${a.days!=null?Math.round(a.days):'—'}</td></tr>`:''; }
+function renderStats(){
+  const C=closedTrades(), all=agg(C), el=$('[data-tab=stats]');
+  const by=(f,keys)=>keys.map(k=>aggRow(k,agg(C.filter(c=>f(c.t)===k)))).join('');
+  const head='<thead><tr><th></th><th class="r">筆數</th><th class="r">勝率</th><th class="r">平均報酬</th><th class="r">賺賠比</th><th class="r">已實現</th><th class="r">平均持有天</th></tr></thead>';
+  const gk=t=>!t.gate||t.gate.result==='補記'?'補記／舊的':t.gate.override?'沒過關還是下':'有過關卡';
+  const pk=t=>t.planned===true?'事先計畫':t.planned===false?'臨時起意':'補記／舊的';
+  const lessons=C.filter(c=>c.t.lesson).sort((a,b)=>(b.p.last||'').localeCompare(a.p.last||''));
+  el.innerHTML=`
+  <div class="card"><h2>成績單</h2><p class="hint">只算已結案的交易，用均價法算損益（含手續費與證交稅）。累積 10 筆以上再看比較有意義。</p>
+   ${all?`<div class="kpis"><div class="kpi"><div class="l">結案</div><div class="v">${all.n} 筆</div></div><div class="kpi"><div class="l">勝率</div><div class="v">${pct(all.win,0)}</div></div>
+    <div class="kpi"><div class="l">平均報酬</div><div class="v ${cls(all.avg)}">${spct(all.avg)}</div><div class="n">賺的平均 ${spct(all.aw)}，賠的平均 ${spct(all.al)}</div></div>
+    <div class="kpi"><div class="l">已實現合計</div><div class="v ${cls(all.pnl)}">${fmt(all.pnl)}</div></div></div>`:'<div class="empty">還沒有結案的交易。</div>'}</div>
+  ${all?`<div class="card"><h2>哪一種買法真的有賺</h2><div class="tbl"><table>${head}<tbody>${by(t=>t.type,TYPES)}</tbody></table></div></div>
+  <div class="card"><h2>守紀律有沒有差</h2><p class="hint">如果「沒過關還是下」和「臨時起意」的成績比較差，關卡就是在幫你。</p><div class="tbl"><table>${head}<tbody>${by(gk,['有過關卡','沒過關還是下','補記／舊的'])}${by(pk,['事先計畫','臨時起意'])}</tbody></table></div></div>`:''}
+  <div class="card"><h2>結案心得</h2>${lessons.length?lessons.map(c=>`<div class="quote"><b>${esc(c.t.sid)} ${esc(c.t.name)} <span class="${cls(c.p.realized)}">${spct(c.ret)}</span></b>\n${esc(c.t.lesson)}</div>`).join(''):'<div class="empty">結案後在那筆紀錄裡寫心得，會集中顯示在這裡。</div>'}</div>`;
+}
+
+/* ---- 設定 ---- */
+const SET=[['equity','可投資總資產（元）','股票市值＋準備投入的現金。部位計算和風險檢查都以這個為準'],['riskPct','每筆最多賠幾 %','個股從買價跌到停損，最多賠總資產的幾 %。常見 1%，最多 2%'],['maxPosPct','單一個股上限 %','一檔個股市值最多占總資產幾 %（ETF 不算，改用每筆的目標配置）'],['heatPct','總風險上限 %','所有持股一起跌到停損，合計最多賠幾 %。常見 6～8%'],['cooldownDays','虧損出場後冷卻幾天','個股停損出場後這幾天不要再買個股，避免急著扳回來'],['streakN','連虧幾筆要提醒','連續幾筆個股結案都賠錢，就提醒先回頭檢討'],['pledgeSafe','質押維持率安全線 %','用質押或借款買時，買完後維持率要高於這個數字（券商追繳線通常約 130%）'],['feeDisc','手續費折數','0.1425% 打幾折，例如 2.8 折填 0.28，沒折扣填 1'],['reviewDays','預設幾天檢討一次','每筆紀錄到期會出現在總覽，也會 Telegram 提醒']];
+function renderSettings(){
+  const s=S();
+  $('[data-tab=settings]').innerHTML=`
+  <div class="card"><h2>我的規則</h2><p class="hint">下單前檢查和部位計算都照這裡的數字。改了馬上生效，記得按「儲存」。</p>
+   <div class="form">${SET.map(([k,n,h])=>`<label>${n}<input data-set="${k}" value="${s[k]??''}" inputmode="decimal"><span class="st">${h}</span></label>`).join('')}</div></div>
+  <div class="card"><h2>同步到 GitHub</h2><p class="hint">和財務規劃台共用同一把金鑰。在財務規劃台設定過的話，這裡不用再設。按「儲存」會把加密後的資料寫到 <code>docs/journal/vault.json</code>，網路上看到的只有亂碼。</p>
+   <p class="st">${ls.get('fin.token')?'✓ 已設定金鑰（'+esc(repoName())+'）':'尚未設定金鑰：到 <a href="../finance/">財務規劃台</a> › 設定 › 同步，或下面直接貼上'}</p>
+   <div class="form"><label>GitHub 金鑰（Fine-grained token，只勾 tw-stock-cloud、Contents 讀寫）<input id="tokIn" type="password" autocomplete="off"></label></div>
+   <div class="row"><button class="btn sm" id="tokSave">存在這台裝置</button></div></div>
+  <div class="card"><h2>Telegram 檢討提醒</h2><p class="hint">每天盤後的 Telegram 訊息會附上「今天該檢討的」和「跌破你寫的停損的」。要開這個功能，到 GitHub › Settings › Secrets and variables › Actions 新增 <code>JOURNAL_PASS</code>，值填這裡的密碼。沒設就不會提醒，其他功能照常。</p></div>`;
+  $$('[data-set]').forEach(el=>el.addEventListener('change',()=>{ s[el.dataset.set]=num(el.value); changed(); }));
+  $('#tokSave').onclick=()=>{ const t=$('#tokIn').value.trim(); if(t){ ls.set('fin.token',t); toast('已存金鑰'); renderSettings(); } };
+}
+
+boot();
+</script>
+</body>
+</html>
