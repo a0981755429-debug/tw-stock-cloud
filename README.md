@@ -40,13 +40,13 @@
 ```yaml
 holdings:
   - id: "2317"
-    shares: 550          # 股數
-    cost: 134099         # 總成本（含手續費，券商 App 的「付出成本」）
-    stop_loss: 216       # 選填：跌到這個價格用 Telegram 通知
+    shares: 1000         # 股數
+    cost: 200000         # 總成本（含手續費，券商 App 的「付出成本」）
+    stop_loss: 180       # 選填：跌到這個價格用 Telegram 通知
     take_profit: 300     # 選填：漲到這個價格通知
   - id: "00878"
-    shares: 9000
-    cost: 164596         # 高股息 ETF 建議不設停損，改在 watchlist.yml 設 yield_above
+    shares: 2000
+    cost: 60000          # 高股息 ETF 建議不設停損，改在 watchlist.yml 設 yield_above
 ```
 
 買賣後到同一個地方按「Update」改內容（Secrets 存了以後看不到舊內容，建議自己另外留一份）。
