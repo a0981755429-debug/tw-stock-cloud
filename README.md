@@ -110,3 +110,13 @@ python -m pytest -q
 python -m stockapp.daily --no-push          # 盤後更新（不推播）
 python -m stockapp.intraday --force --no-push
 ```
+
+## 💰 財務規劃台（`docs/finance/`）
+
+網址：`https://<你的 GitHub 帳號>.github.io/tw-stock-cloud/finance/`，股票頁底部也有連結。
+
+- 資金分配（每月繳多少、存多少、買多少股票）、目標進度、貸款、保單、收支、資產、實行步驟都在這裡。
+- 資料放在 `docs/finance/vault.json`，**整份加密**（PBKDF2＋AES-GCM），要輸入密碼才會在瀏覽器裡解開；repo 裡沒有明文。
+- 股票現價直接讀股票頁的 `docs/data.json`，每天盤後自動更新。
+- 在網頁上改完按「儲存」：設定分頁填一把只能寫這個 repo 的 Fine-grained token（Contents: Read and write），就會直接寫回 GitHub；沒有設定的話會下載 `vault.json`，自己上傳也可以。
+- 本機加解密：`FIN_PASS=密碼 node tools/finance_vault.mjs encrypt|decrypt 來源 目的`
