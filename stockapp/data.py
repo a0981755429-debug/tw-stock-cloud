@@ -1,7 +1,8 @@
 """資料抓取：全部免費來源。
 
 - 股票名稱 / 上市櫃別：FinMind TaiwanStockInfo
-- 日 K 歷史：yfinance（2330.TW / 6488.TWO），失敗改用 FinMind TaiwanStockPrice
+- 日 K 歷史：yfinance 還原權值價格（2330.TW / 6488.TWO），失敗改用 FinMind TaiwanStockPrice（未還原）
+- ETF 配息：yfinance 除息紀錄；折溢價：證交所 mis ETF 預估淨值
 - 盤中即時價：證交所 mis.twse.com.tw（官網即時看盤頁的後端，非正式 API）
 - 財報：FinMind 月營收、EPS、本益比（免費 dataset）
 
@@ -88,7 +89,8 @@ def _history_yfinance(stock_id: str, market: str) -> pd.DataFrame:
     suffixes = [".TWO", ".TW"] if market == "tpex" else [".TW", ".TWO"]
     for suf in suffixes:
         try:
-            h = yf.Ticker(stock_id + suf).history(period="2y", interval="1d", auto_adjust=False)
+            # auto_adjust=True：還原除權息，避免除息當天看起來像大跌而產生假訊號
+            h = yf.Ticker(stock_id + suf).history(period="2y", interval="1d", auto_adjust=True)
         except Exception as e:  # noqa: BLE001
             log.info("yfinance %s%s 失敗: %s", stock_id, suf, e)
             continue
@@ -107,6 +109,58 @@ def _history_finmind(stock_id: str, days: int) -> pd.DataFrame:
     df = df.rename(columns={"max": "high", "min": "low", "Trading_Volume": "volume"})
     df.index = pd.to_datetime(df["date"])
     return df[["open", "high", "low", "close", "volume"]].astype(float)
+
+
+def dividends(stock_id: str, market: str) -> dict:
+    """近一年現金配息（yfinance 除息紀錄）。回傳 ttm_dps、last_dps、last_ex、count。"""
+    out = {"ttm_dps": None, "last_dps": None, "last_ex": None, "count": 0}
+    try:
+        import yfinance as yf
+    except ImportError:
+        return out
+    for suf in ([".TWO", ".TW"] if market == "tpex" else [".TW", ".TWO"]):
+        try:
+            d = yf.Ticker(stock_id + suf).dividends
+        except Exception:  # noqa: BLE001
+            continue
+        if d is None or len(d) == 0:
+            continue
+        d.index = pd.to_datetime(d.index).tz_localize(None)
+        last_year = d[d.index > pd.Timestamp.now() - pd.Timedelta(days=365)]
+        out.update(
+            ttm_dps=round(float(last_year.sum()), 4) if len(last_year) else None,
+            last_dps=round(float(d.iloc[-1]), 4),
+            last_ex=d.index[-1].strftime("%Y-%m-%d"),
+            count=int(len(last_year)),
+        )
+        return out
+    return out
+
+
+def etf_premiums() -> dict[str, dict]:
+    """證交所 ETF 盤中預估淨值與折溢價（上市 ETF）。{code: {"nav", "premium_pct"}}，抓不到回空。"""
+    try:
+        r = requests.get("https://mis.twse.com.tw/stock/data/all_etf.txt", headers=_UA, timeout=15)
+        j = r.json()
+    except Exception as e:  # noqa: BLE001
+        log.info("ETF 折溢價抓取失敗: %s", e)
+        return {}
+    out = {}
+    for block in j.get("a1") or []:
+        for m in block.get("msgArray") or []:
+            code = str(m.get("a", "")).strip()
+            nav = _f(m.get("f"))
+            try:
+                prem = float(str(m.get("g", "")).replace("%", ""))
+            except ValueError:
+                prem = None
+            if code and (nav or prem is not None):
+                out[code] = {"nav": nav, "premium_pct": prem}
+    return out
+
+
+def is_etf(stock_id: str) -> bool:
+    return stock_id.startswith("00")
 
 
 # ---------------------------------------------------------------- 盤中即時

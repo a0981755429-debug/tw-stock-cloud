@@ -32,6 +32,7 @@ jobs:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HOLDINGS: ${{ secrets.HOLDINGS }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             python -m stockapp.daily

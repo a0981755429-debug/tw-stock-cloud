@@ -139,7 +139,7 @@ def test_daily_uses_official_close(monkeypatch, tmp_path):
     st = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["stocks"][0]
     assert st["close"] == 147.0 and st["change_pct"] == -2.0
     pf = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["portfolio"]
-    assert pf["total_value"] == 147000 and pf["total_pl"] == 47000 and pf["rows"][0]["weight"] == 100.0
+    assert pf["total_pl_pct"] == 47.0 and pf["rows"][0]["weight"] == 100.0 and "total_value" not in pf
 
 
 def test_holdings_file_and_portfolio(tmp_path):
@@ -169,5 +169,43 @@ def test_check_stops_dedupe_and_shared_state():
     assert "H:2330:stop" in state["20261112"]
 
 
-def test_repo_holdings_valid():
-    assert all(h.shares > 0 and h.cost > 0 for h in holdings.load())
+def test_holdings_not_committed():
+    import subprocess
+    tracked = subprocess.run(["git", "ls-files", "holdings.yml"], capture_output=True, text=True, cwd=config.ROOT).stdout
+    assert tracked.strip() == "", "holdings.yml 不可以放進公開 repo"
+
+
+def test_holdings_from_secret_env(monkeypatch):
+    monkeypatch.setenv("HOLDINGS", 'holdings:\n  - id: "2317"\n    shares: 100\n    cost: 20000\n')
+    hs = holdings.load()
+    assert len(hs) == 1 and hs[0].avg_cost == 200
+    monkeypatch.setenv("HOLDINGS", "::: not yaml [")
+    assert holdings.load() == []
+
+
+def test_public_view_hides_amounts():
+    hs = [holdings.Holding("2317", 1000, 200000, 180, 300)]
+    pv = holdings.public_view(holdings.portfolio(hs, {"2317": 250}, {"2317": "鴻海"}))
+    text = json.dumps(pv)
+    for leak in ("shares", "cost", "value", "avg_cost", "stop_loss", "200000", "250000"):
+        assert leak not in text
+    assert pv["rows"][0]["pl_pct"] == 25.0 and pv["total_pl_pct"] == 25.0
+
+
+def test_etf_skips_technical_signal(monkeypatch):
+    monkeypatch.setattr(data, "price_history", lambda sid, m: make_hist(np.linspace(40, 30, 130)))
+    monkeypatch.setattr(data, "dividends", lambda sid, m: {"ttm_dps": 3.0, "last_dps": 1.0, "last_ex": "2026-08-18", "count": 4})
+    st = config.Stock("00878", next_ex="2026-11-17", next_dps=1.25, yield_above=9)
+    it = daily.build_stock(st, {}, {"00878": {"nav": 29.8, "premium_pct": 0.67}})
+    sig = it["signal"]
+    assert sig["label"] == "ETF" and sig["events"] == [] and sig["etf"]["yield"] == 10.0
+    assert any("2026-11-17" in r for r in sig["reasons"]) and any("+0.67%" in r for r in sig["reasons"])
+    assert not any("空頭" in r for r in sig["reasons"])
+
+
+def test_yield_alert():
+    stocks = [config.Stock("00878", yield_above=9)]
+    q = data.Quote("00878", "國泰永續高股息", 30.0, 30.2, None, None, None, None, "10:00:00", "20261112", True)
+    m = alerts.check(stocks, {"00878": q}, {}, {}, "20261112", {"00878": 3.0})
+    assert len(m) == 1 and "殖利率 10.0%" in m[0]
+    assert alerts.check(stocks, {"00878": q}, {}, {}, "20261112", {"00878": 2.0}) == []

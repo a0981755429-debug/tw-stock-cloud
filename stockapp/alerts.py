@@ -6,7 +6,7 @@ from stockapp.data import Quote
 
 
 def check(stocks: list[Stock], quotes: dict[str, Quote], names: dict[str, str],
-          state: dict, today: str) -> list[str]:
+          state: dict, today: str, ttm_dps: dict[str, float] | None = None) -> list[str]:
     """回傳要推播的訊息列表，並就地更新 state（{today: [key, ...]}）。"""
     sent_today = set(state.get(today, []))
     msgs = []
@@ -24,6 +24,11 @@ def check(stocks: list[Stock], quotes: dict[str, Quote], names: dict[str, str],
         if s.change_pct is not None and chg is not None and abs(chg) >= s.change_pct:
             arrow = "🔺" if chg > 0 else "🔻"
             checks.append(("pct", f"{arrow} {s.id} {name} 今日{'上漲' if chg > 0 else '下跌'} {abs(chg):.1f}%（現價 {q.price:g}）"))
+        dps = (ttm_dps or {}).get(s.id)
+        if s.yield_above is not None and dps and q.price:
+            y = dps / q.price * 100
+            if y >= s.yield_above:
+                checks.append(("yield", f"💵 {s.id} {name} 殖利率 {y:.1f}%（近一年配息 {dps:g} ÷ 現價 {q.price:g}），高於你設定的 {s.yield_above:g}%，可考慮加碼"))
         for kind, msg in checks:
             key = f"{s.id}:{kind}"
             if key in sent_today:

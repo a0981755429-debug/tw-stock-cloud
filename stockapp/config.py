@@ -20,6 +20,9 @@ class Stock:
     above: float | None = None      # 漲到（含）這個價格就通知
     below: float | None = None      # 跌到（含）這個價格就通知
     change_pct: float | None = None  # 當日漲跌幅絕對值超過 N% 就通知
+    yield_above: float | None = None  # ETF：殖利率（近一年配息 ÷ 現價）高於 N% 就通知（可考慮加碼）
+    next_ex: str = ""                 # ETF：下次除息日（手動填，例如 2026-11-17）
+    next_dps: float | None = None     # ETF：下次每股配息（手動填）
 
 
 @dataclass
@@ -52,6 +55,9 @@ def load(path: Path = WATCHLIST) -> Settings:
             above=_num(alert.get("above")),
             below=_num(alert.get("below")),
             change_pct=_num(alert.get("change_pct")),
+            yield_above=_num(alert.get("yield_above")),
+            next_ex=str(item.get("next_ex") or ""),
+            next_dps=_num(item.get("next_dps")),
         ))
     return Settings(stocks=stocks, signal_notify=bool(raw.get("signal_notify", True)))
 

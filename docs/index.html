@@ -101,6 +101,7 @@ function pct(v){ return v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2) + 
 function num(v, d){ return v == null ? "—" : Number(v).toLocaleString("zh-TW", {maximumFractionDigits: d ?? 2}); }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function badge(sig){
+  if (sig.etf) return `<span class="badge b-neu">殖利率 ${sig.etf.yield == null ? "—" : sig.etf.yield.toFixed(1) + "%"}</span>`;
   const k = sig.label === "偏多" ? "b-bull" : sig.label === "偏空" ? "b-bear" : "b-neu";
   return `<span class="badge ${k}">${esc(sig.label)} ${sig.score > 0 ? "+" : ""}${sig.score}</span>`;
 }
@@ -148,8 +149,20 @@ function fundamentals(f){
   return h;
 }
 
+function etfBlock(e){
+  return `<div class="sec"><h3>配息資料</h3><div class="grid">
+    <div class="kv"><span>殖利率（近一年）</span><b>${e.yield == null ? "—" : e.yield.toFixed(2) + "%"}</b></div>
+    <div class="kv"><span>近一年配息</span><b>${num(e.ttm_dps, 3)} 元</b></div>
+    <div class="kv"><span>最近除息</span><b>${esc(e.last_ex || "—")}</b></div>
+    <div class="kv"><span>下次除息</span><b>${esc(e.next_ex || "未填")}</b></div>
+    <div class="kv"><span>下次每股</span><b>${e.next_dps == null ? "—" : num(e.next_dps, 3)}</b></div>
+    <div class="kv"><span>折溢價</span><b class="${e.premium_pct > 1 ? "up" : e.premium_pct < -0.5 ? "down" : ""}">${e.premium_pct == null ? "—" : pct(e.premium_pct)}</b></div>
+  </div></div>`;
+}
+
 function alertText(a){
   const parts = [];
+  if (a.yield_above != null) parts.push(`殖利率高於 ${a.yield_above}%`);
   if (a.above != null) parts.push(`漲到 ${num(a.above)} 以上`);
   if (a.below != null) parts.push(`跌到 ${num(a.below)} 以下`);
   if (a.change_pct != null) parts.push(`單日漲跌超過 ${a.change_pct}%`);
@@ -161,33 +174,30 @@ function renderPf(){
   const pf = DATA && DATA.portfolio;
   const el = $("#pf");
   if (!pf || !pf.rows || !pf.rows.length || !(FILTER === "all" || FILTER === "hold")) { el.innerHTML = ""; return; }
-  // 盤中用即時價重算
+  // 盤中：用「即時價 ÷ 收盤價」把百分比往前推，不需要（也不公開）金額
   const rows = pf.rows.map(r => {
-    const q = QUOTES[r.id]; const price = q && q.live ? q.price : r.price;
-    const value = price == null ? null : price * r.shares;
-    return {...r, price, value, pl: value == null ? null : value - r.cost};
+    const q = QUOTES[r.id], f = q && r.price ? q.price / r.price : 1;
+    return {...r, live: !!q, now: q ? q.price : r.price, f,
+            pl: r.pl_pct == null ? null : ((1 + r.pl_pct / 100) * f - 1) * 100, w: (r.weight || 0) * f};
   });
-  const tv = rows.reduce((a, r) => a + (r.value || 0), 0);
-  const tc = rows.reduce((a, r) => a + (r.value == null ? 0 : r.cost), 0);
-  const tpl = tv - tc;
-  const live = rows.some(r => QUOTES[r.id] && QUOTES[r.id].live);
-  el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "盤中即時" : "收盤"}</span></h2>
-    <div class="kpis">
-      <div class="kv"><span>總市值</span><b>${num(tv, 0)}</b></div>
-      <div class="kv"><span>總成本</span><b>${num(tc, 0)}</b></div>
-      <div class="kv"><span>未實現損益</span><b class="${cls(tpl)}">${tpl > 0 ? "+" : ""}${num(tpl, 0)}<br><small>${tc ? pct(tpl / tc * 100) : "—"}</small></b></div>
+  const tw = rows.reduce((a, r) => a + r.w, 0) || 1;
+  rows.forEach(r => r.w = r.w / tw * 100);
+  const live = rows.some(r => r.live);
+  // 總報酬：用占比加權（成本占比 = 市值占比 ÷ (1+報酬)）
+  let cv = 0, vv = 0; rows.forEach(r => { if (r.pl == null) return; vv += r.w; cv += r.w / (1 + r.pl / 100); });
+  const tpl = cv ? (vv / cv - 1) * 100 : null;
+  el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "盤中即時" : "收盤"} · 只顯示百分比</span></h2>
+    <div class="kpis" style="grid-template-columns:1fr 1fr">
+      <div class="kv"><span>整體報酬（未實現）</span><b class="${cls(tpl)}">${tpl == null ? "—" : pct(tpl)}</b></div>
+      <div class="kv"><span>持股檔數</span><b>${rows.length}</b></div>
     </div>
-    <div class="wbar">${rows.map((r, i) => r.value ? `<span style="width:${(r.value / tv * 100).toFixed(2)}%;background:${PALETTE[i % PALETTE.length]}"></span>` : "").join("")}</div>
-    <table class="hold"><tr><th>股票</th><th>股數</th><th>均價／現價</th><th>損益</th><th>占比</th></tr>
-    ${rows.map((r, i) => `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PALETTE[i % PALETTE.length]};margin-right:4px"></i>${esc(r.name)}<div class="live">${esc(r.id)}${r.stop_loss != null ? " · 停損 " + r.stop_loss : ""}${r.take_profit != null ? " · 停利 " + r.take_profit : ""}</div></td>
-      <td>${num(r.shares, 0)}</td><td>${num(r.avg_cost)}<br>${num(r.price)}</td>
-      <td class="${cls(r.pl)}">${r.pl == null ? "—" : (r.pl > 0 ? "+" : "") + num(r.pl, 0)}<br><small>${r.pl == null ? "" : pct(r.pl / r.cost * 100)}</small></td>
-      <td>${r.value && tv ? (r.value / tv * 100).toFixed(0) + "%" : "—"}</td></tr>`).join("")}
+    <div class="wbar">${rows.map((r, i) => `<span style="width:${r.w.toFixed(2)}%;background:${PALETTE[i % PALETTE.length]}"></span>`).join("")}</div>
+    <table class="hold"><tr><th>股票</th><th>現價</th><th>報酬</th><th>占比</th></tr>
+    ${rows.map((r, i) => `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PALETTE[i % PALETTE.length]};margin-right:4px"></i>${esc(r.name)}<div class="live">${esc(r.id)}</div></td>
+      <td>${num(r.now)}</td><td class="${cls(r.pl)}">${r.pl == null ? "—" : pct(r.pl)}</td><td>${r.w.toFixed(0)}%</td></tr>`).join("")}
     </table>
     ${(pf.warnings || []).map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("")}
-    <div class="live" style="margin-top:6px">損益未扣賣出手續費與證交稅 · <a id="editH" href="#">編輯持股</a></div></div>`;
-  const m = location.hostname.match(/^([^.]+)\.github\.io$/), repo = location.pathname.split("/").filter(Boolean)[0];
-  $("#editH").href = m && repo ? `https://github.com/${m[1]}/${repo}/edit/main/holdings.yml` : "../holdings.yml";
+    <div class="live" style="margin-top:6px">金額、股數、成本只會用 Telegram 私訊給你 · 報酬未含配息、未扣賣出費用</div></div>`;
 }
 
 function render(){
@@ -203,9 +213,9 @@ function render(){
   if (!list.length){ $("#list").innerHTML = `<div class="empty">沒有符合的股票</div>`; return; }
   $("#list").innerHTML = list.map(s => {
     const q = QUOTES[s.id];
-    const price = q && q.live ? q.price : s.close;
-    const chg = q && q.live ? q.change_pct : s.change_pct;
-    const tag = q && q.live ? `<div class="live">盤中 ${esc(q.time)}</div>` : `<div class="live">收盤 ${esc(s.date || "")}</div>`;
+    const price = q ? q.price : s.close;
+    const chg = q ? q.change_pct : s.change_pct;
+    const tag = q ? `<div class="live">盤中 ${esc(q.time)}</div>` : `<div class="live">收盤 ${esc(s.date || "")}</div>`;
     const ind = s.signal.indicators || {};
     return `<div class="card" data-id="${esc(s.id)}">
       <div class="row">
@@ -215,11 +225,11 @@ function render(){
         <div class="px"><div class="p ${cls(chg)}">${num(price)}</div><div class="c ${cls(chg)}">${pct(chg)}</div>${tag}</div>
       </div>
       <div class="detail">
-        <div class="sec"><h3>買賣訊號分析</h3><ul>
+        <div class="sec"><h3>${s.signal.etf ? "配息分析" : "買賣訊號分析"}</h3><ul>
           ${s.signal.reasons.map(r => `<li class="${s.signal.events.includes(r) ? "ev" : ""}">${esc(r)}</li>`).join("")}
         </ul></div>
-        <div class="sec"><h3>近半年走勢</h3>${chart(s.chart)}</div>
-        <div class="sec"><h3>技術指標</h3><div class="grid">
+        <div class="sec"><h3>近半年走勢（還原權值）</h3>${chart(s.chart)}</div>
+        ${s.signal.etf ? etfBlock(s.signal.etf) : `<div class="sec"><h3>技術指標</h3><div class="grid">
           <div class="kv"><span>RSI(14)</span><b>${num(ind.rsi,1)}</b></div>
           <div class="kv"><span>K / D</span><b>${num(ind.k,0)} / ${num(ind.d,0)}</b></div>
           <div class="kv"><span>MACD 柱</span><b class="${cls(ind.macd_hist)}">${num(ind.macd_hist,2)}</b></div>
@@ -227,7 +237,7 @@ function render(){
           <div class="kv"><span>季線</span><b>${num(ind.ma60)}</b></div>
           <div class="kv"><span>52 週高 / 低</span><b>${num(s.high_52w,0)} / ${num(s.low_52w,0)}</b></div>
         </div></div>
-        <div class="sec"><h3>財報</h3>${fundamentals(s.fundamentals)}</div>
+        <div class="sec"><h3>財報</h3>${fundamentals(s.fundamentals)}</div>`}
         <div class="sec"><h3>價格提醒</h3><div>${esc(alertText(s.alert || {}))}</div>${s.note ? `<div class="live">備註：${esc(s.note)}</div>` : ""}</div>
       </div></div>`;
   }).join("");
@@ -254,9 +264,16 @@ async function load(){
   try {
     DATA = await (await fetch("data.json" + bust)).json();
   } catch { $("#list").innerHTML = `<div class="empty">還沒有資料，等第一次盤後更新完成就會出現。</div>`; $("#upd").textContent = ""; return; }
+  QUOTES = {}; DATA._q = null;
   try { const q = await (await fetch("quotes.json" + bust)).json();
     const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
-    if (q.updated_at && q.updated_at.slice(0, 10) === today) { QUOTES = q.quotes || {}; DATA._q = q.updated_at; }
+    // 只用「今天、盤中時段、比盤後資料新」的報價；收盤後一律以盤後官方收盤價為準
+    const u = q.updated_at || "";
+    if (u.slice(0, 10) === today && u.slice(11) <= "13:40" && u > DATA.updated_at) {
+      const ymd = today.replace(/-/g, "");
+      for (const [k, v] of Object.entries(q.quotes || {})) if (v.live && (!v.date || v.date === ymd)) QUOTES[k] = v;
+      DATA._q = u;
+    }
   } catch {}
   $("#upd").textContent = `盤後資料 ${DATA.updated_at}` + (DATA._q ? ` · 盤中報價 ${DATA._q.slice(11)}` : "");
   render();
