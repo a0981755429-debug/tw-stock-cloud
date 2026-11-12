@@ -4,9 +4,9 @@
 
     holdings:
       - id: "2317"
-        shares: 550
-        cost: 134099        # 總成本（含手續費），或改填 avg_cost
-        stop_loss: 216      # 選填，不填 = 不提醒
+        shares: 1000
+        cost: 200000        # 總成本（含手續費），或改填 avg_cost
+        stop_loss: 180      # 選填，不填 = 不提醒
         take_profit: 300    # 選填
 
 本機測試時也可以放在 repo 根目錄的 holdings.yml（已加進 .gitignore，不會上傳）。
