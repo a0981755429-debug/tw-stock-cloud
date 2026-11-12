@@ -31,7 +31,27 @@
 
    Secrets 是加密的，別人看不到，連你自己存了以後也看不到內容。
 
-### 3.（選用）FinMind 金鑰
+### 3. 設定持股（加密，不公開）
+
+持股的股數和成本放在 GitHub Secrets，**別人看不到**。網頁上只顯示報酬率和占比的百分比，金額只會用 Telegram 私訊給你。
+
+到 **Settings › Secrets and variables › Actions › New repository secret**，名稱填 `HOLDINGS`，內容照這個格式：
+
+```yaml
+holdings:
+  - id: "2317"
+    shares: 1000         # 股數
+    cost: 200000         # 總成本（含手續費，券商 App 的「付出成本」）
+    stop_loss: 180       # 選填：跌到這個價格用 Telegram 通知
+    take_profit: 300     # 選填：漲到這個價格通知
+  - id: "00878"
+    shares: 2000
+    cost: 60000          # 高股息 ETF 建議不設停損，改在 watchlist.yml 設 yield_above
+```
+
+買賣後到同一個地方按「Update」改內容（Secrets 存了以後看不到舊內容，建議自己另外留一份）。
+
+### 4.（選用）FinMind 金鑰
 
 財報資料來自 [FinMind](https://finmindtrade.com/)。不設也能用，但如果自選股很多（超過 30 檔），建議免費註冊拿 Token，加一個 secret：`FINMIND_TOKEN`。
 
@@ -53,6 +73,10 @@ stocks:
 ```
 
 存檔後大約 2 分鐘，網頁會自動重算。同一檔、同一種提醒，每天最多通知一次。
+
+**ETF（代號 00 開頭）** 不打技術分數，改顯示殖利率、配息、除息日和折溢價，可以設 `yield_above`（殖利率高於幾 % 通知加碼），下次除息日 `next_ex`、每股配息 `next_dps` 在投信公告後手動填。
+
+**均線和訊號用還原權值價格**，除息當天不會被誤判成大跌。
 
 ---
 

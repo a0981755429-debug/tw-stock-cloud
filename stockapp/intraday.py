@@ -32,12 +32,15 @@ def main(argv=None) -> int:
     hs = holdings.load()
     ids = list(dict.fromkeys([s.id for s in settings.stocks] + [h.id for h in hs]))
     # 名稱 / 上市櫃別：優先用盤後產生的 data.json，省一次 FinMind 呼叫
-    names, markets = {}, {}
+    names, markets, ttm_dps = {}, {}, {}
     try:
         cached = json.loads((config.DOCS / "data.json").read_text(encoding="utf-8"))
         for it in cached.get("stocks", []):
             names[it["id"]] = it["name"]
             markets[it["id"]] = "tpex" if it.get("market") == "上櫃" else "twse"
+            etf = (it.get("signal") or {}).get("etf") or {}
+            if etf.get("ttm_dps"):
+                ttm_dps[it["id"]] = etf["ttm_dps"]
     except (FileNotFoundError, ValueError):
         pass
     missing = [sid for sid in ids if sid not in markets]
@@ -55,7 +58,7 @@ def main(argv=None) -> int:
         return 0
 
     state = config.load_state()
-    msgs = alerts.check(settings.stocks, quotes, names, state, today)
+    msgs = alerts.check(settings.stocks, quotes, names, state, today, ttm_dps)
     msgs += holdings.check_stops(hs, quotes, names, state, today)
     if msgs and not args.no_push:
         notify.telegram("🔔 到價提醒\n\n" + "\n".join(msgs))
@@ -64,10 +67,11 @@ def main(argv=None) -> int:
     for m in msgs:
         log.info(m)
 
+    # date = 交易所的資料日期；網頁只採用「今天」的報價，避免前一天的報價蓋掉今天收盤
     out = {
         "updated_at": now.strftime("%Y-%m-%d %H:%M"),
         "quotes": {sid: {"price": q.price, "change_pct": None if q.change_pct is None else round(q.change_pct, 2),
-                         "time": q.time, "live": q.is_live} for sid, q in quotes.items()},
+                         "time": q.time, "date": q.date, "live": q.is_live} for sid, q in quotes.items()},
     }
     (config.DOCS / "quotes.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log.info("報價 %d 檔、提醒 %d 則", len(quotes), len(msgs))

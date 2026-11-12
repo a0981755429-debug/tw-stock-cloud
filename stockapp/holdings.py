@@ -1,7 +1,21 @@
-"""持股損益、資金配置與停損停利。資料在 repo 根目錄的 holdings.yml。"""
+"""持股損益、資金配置與停損停利。
+
+持股資料放在 GitHub Secret「HOLDINGS」（加密，別人看不到），內容是 YAML：
+
+    holdings:
+      - id: "2317"
+        shares: 1000
+        cost: 200000        # 總成本（含手續費），或改填 avg_cost
+        stop_loss: 180      # 選填，不填 = 不提醒
+        take_profit: 300    # 選填
+
+本機測試時也可以放在 repo 根目錄的 holdings.yml（已加進 .gitignore，不會上傳）。
+公開網頁只會看到損益百分比與占比，金額、股數、成本只透過 Telegram 私訊。
+"""
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,10 +44,19 @@ class Holding:
 
 
 def load(path: Path = HOLDINGS) -> list[Holding]:
+    text = os.environ.get("HOLDINGS")
+    if not text:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return []
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except FileNotFoundError:
+        raw = yaml.safe_load(text) or {}
+    except yaml.YAMLError:
+        log.warning("持股資料不是正確的 YAML 格式，已略過")  # 不印內容，避免外洩到公開 log
         return []
+    if isinstance(raw, list):
+        raw = {"holdings": raw}
     out = []
     for item in raw.get("holdings") or []:
         try:
@@ -43,7 +66,7 @@ def load(path: Path = HOLDINGS) -> list[Holding]:
                 continue
             cost = float(item["cost"]) if item.get("cost") is not None else float(item["avg_cost"]) * shares
         except (KeyError, TypeError, ValueError):
-            log.warning("holdings.yml 有一筆格式不對（需要 id、shares、cost 或 avg_cost），已略過：%s", item)
+            log.warning("持股資料有一筆格式不對（需要 id、shares、cost 或 avg_cost），已略過")
             continue
         sl, tp = item.get("stop_loss"), item.get("take_profit")
         out.append(Holding(
@@ -85,12 +108,22 @@ def portfolio(holdings: list[Holding], prices: dict[str, float], names: dict[str
     }
 
 
+def public_view(pf: dict) -> dict:
+    """公開網頁用：只留百分比，拿掉金額、股數、成本、均價與停損停利價。"""
+    return {
+        "rows": [{"id": r["id"], "name": r["name"], "price": r["price"],
+                  "pl_pct": r["pl_pct"], "weight": r["weight"]} for r in pf["rows"]],
+        "total_pl_pct": pf["total_pl_pct"],
+        "warnings": pf["warnings"],
+    }
+
+
 def summary_text(pf: dict) -> str:
-    lines = ["💼 持股損益"]
+    lines = ["💼 持股損益（私訊）"]
     for r in pf["rows"]:
         if r["value"] is None:
             continue
-        lines.append(f"{r['id']} {r['name']} 市值 {r['value']:,}｜{r['pl']:+,}（{r['pl_pct']:+.1f}%）｜占 {r['weight']:.0f}%")
+        lines.append(f"{r['id']} {r['name']} {r['shares']:,.0f} 股｜市值 {r['value']:,}｜{r['pl']:+,}（{r['pl_pct']:+.1f}%）｜占 {r['weight']:.0f}%")
     if pf["total_cost"]:
         lines.append(f"合計 {pf['total_value']:,}，損益 {pf['total_pl']:+,}（{pf['total_pl_pct']:+.1f}%）")
     lines += [f"⚠️ {w}" for w in pf["warnings"]]
