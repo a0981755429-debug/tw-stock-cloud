@@ -1,0 +1,48 @@
+name: 盤後更新
+
+on:
+  schedule:
+    - cron: "30 9 * * 1-5"   # 台北時間 週一~五 17:30（GitHub 排程常會延遲 5~30 分鐘）
+  push:
+    branches: [main]
+    paths: ["watchlist.yml"] # 改完自選股就自動重算一次
+  workflow_dispatch:         # 可在 Actions 頁面手動按「Run workflow」
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: 抓資料、算訊號、推播
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            python -m stockapp.daily
+          else
+            python -m stockapp.daily --no-push   # 手動 / 改自選股時只更新網頁，不推播
+          fi
+      - name: 存檔
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json
+          git diff --cached --quiet && exit 0
+          git commit -m "盤後資料更新 $(TZ=Asia/Taipei date +%F)"
+          git pull --rebase origin main && git push
