@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -41,4 +41,4 @@ jobs:
           git add docs/quotes.json state/alerts_sent.json 2>/dev/null || true
           git diff --cached --quiet && exit 0
           git commit -m "盤中報價 $(TZ=Asia/Taipei date '+%F %H:%M')"
-          git pull --rebase origin main && git push
+          git pull --rebase -X theirs origin main && git push   # 同時有別次更新時以這次的新資料為準
