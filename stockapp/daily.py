@@ -91,6 +91,19 @@ def main(argv=None) -> int:
             items.append(build_stock(s, info))
         except Exception as e:  # noqa: BLE001
             log.exception("%s 失敗: %s", s.id, e)
+    # 收盤價 / 漲跌幅以證交所官方（mis）為準；Yahoo 的昨收偶爾會跟官方不同
+    try:
+        mk = {it["id"]: ("tpex" if it["market"] == "上櫃" else "twse") for it in items}
+        quotes = data.live_quotes(list(mk.items()))
+        for it in items:
+            q = quotes.get(it["id"])
+            if q and q.is_live and q.date == now.strftime("%Y%m%d"):
+                it["close"] = round(q.price, 2)
+                it["change_pct"] = _round(q.change_pct)
+                it["date"] = now.strftime("%Y-%m-%d")
+    except Exception as e:  # noqa: BLE001
+        log.warning("官方收盤價校正失敗：%s", e)
+
     config.DOCS.mkdir(exist_ok=True)
     out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": items}
     (config.DOCS / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")

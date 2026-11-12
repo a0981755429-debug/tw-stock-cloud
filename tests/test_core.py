@@ -94,6 +94,7 @@ def test_daily_build(monkeypatch, tmp_path):
     monkeypatch.setattr(data, "stock_info", lambda: {"2330": {"name": "台積電", "market": "twse", "industry": "半導體業"}})
     monkeypatch.setattr(config, "DOCS", tmp_path)
     monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2330")]))
+    monkeypatch.setattr(data, "live_quotes", lambda pairs: {})
     sent = []
     monkeypatch.setattr(daily.notify, "telegram", lambda t: sent.append(t) or True)
     assert daily.main([]) == 0
@@ -119,3 +120,18 @@ def test_intraday_flow(monkeypatch, tmp_path):
     assert any("2330:below" in v for v in saved.values())
     q = json.loads((tmp_path / "quotes.json").read_text(encoding="utf-8"))
     assert q["quotes"]["2330"]["price"] == 940
+
+
+def test_daily_uses_official_close(monkeypatch, tmp_path):
+    from datetime import datetime
+    monkeypatch.setattr(data, "price_history", lambda sid, m: make_hist(np.linspace(100, 150, 130)))
+    monkeypatch.setattr(data, "fundamentals", lambda sid: {})
+    monkeypatch.setattr(data, "stock_info", lambda: {})
+    monkeypatch.setattr(config, "DOCS", tmp_path)
+    monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2330")], signal_notify=False))
+    today = datetime.now(daily.TPE).strftime("%Y%m%d")
+    q = data.Quote("2330", "", 147.0, 150.0, None, None, None, None, "13:30:00", today, True)
+    monkeypatch.setattr(data, "live_quotes", lambda pairs: {"2330": q})
+    assert daily.main(["--no-push"]) == 0
+    st = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["stocks"][0]
+    assert st["close"] == 147.0 and st["change_pct"] == -2.0
