@@ -13,14 +13,18 @@
 signal_notify: true   # 每天盤後推播自選股的買賣訊號摘要（false = 關閉）
 
 stocks:
+  # ---- 持股（股數成本在 holdings.yml）----
+  - id: "00878"
+  - id: "00919"
+  - id: "2317"
+  - id: "3032"
+
+  # ---- 觀察中 ----
   - id: "2330"
-    note: 台積電，範例
+    note: 範例，可刪除
     alert:
-      below: 1000
       change_pct: 5
 
   - id: "0050"
     alert:
       change_pct: 3
-
-  - id: "2317"

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from stockapp import alerts, config, daily, data, intraday
+from stockapp import alerts, config, daily, data, holdings, intraday
 from stockapp.indicators import kd, rsi, sma
 from stockapp.signals import analyze
 
@@ -95,6 +95,7 @@ def test_daily_build(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "DOCS", tmp_path)
     monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2330")]))
     monkeypatch.setattr(data, "live_quotes", lambda pairs: {})
+    monkeypatch.setattr(holdings, "load", lambda: [])
     sent = []
     monkeypatch.setattr(daily.notify, "telegram", lambda t: sent.append(t) or True)
     assert daily.main([]) == 0
@@ -113,10 +114,11 @@ def test_intraday_flow(monkeypatch, tmp_path):
     saved = {}
     monkeypatch.setattr(config, "save_state", lambda s: saved.update(s))
     monkeypatch.setattr(data, "live_quotes", lambda pairs: {"2330": _q(940)})
+    monkeypatch.setattr(holdings, "load", lambda: [holdings.Holding("2330", 1000, 1_000_000, 945, None)])
     sent = []
     monkeypatch.setattr(intraday.notify, "telegram", lambda t: sent.append(t) or True)
     assert intraday.main(["--force"]) == 0
-    assert sent and "跌到 940" in sent[0]
+    assert sent and "跌到 940" in sent[0] and "停損提醒" in sent[0]
     assert any("2330:below" in v for v in saved.values())
     q = json.loads((tmp_path / "quotes.json").read_text(encoding="utf-8"))
     assert q["quotes"]["2330"]["price"] == 940
@@ -132,6 +134,40 @@ def test_daily_uses_official_close(monkeypatch, tmp_path):
     today = datetime.now(daily.TPE).strftime("%Y%m%d")
     q = data.Quote("2330", "", 147.0, 150.0, None, None, None, None, "13:30:00", today, True)
     monkeypatch.setattr(data, "live_quotes", lambda pairs: {"2330": q})
+    monkeypatch.setattr(holdings, "load", lambda: [holdings.Holding("2330", 1000, 100_000, None, None)])
     assert daily.main(["--no-push"]) == 0
     st = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["stocks"][0]
     assert st["close"] == 147.0 and st["change_pct"] == -2.0
+    pf = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["portfolio"]
+    assert pf["total_value"] == 147000 and pf["total_pl"] == 47000 and pf["rows"][0]["weight"] == 100.0
+
+
+def test_holdings_file_and_portfolio(tmp_path):
+    p = tmp_path / "h.yml"
+    p.write_text('holdings:\n  - id: "2317"\n    shares: 1000\n    cost: 200000\n    stop_loss: 180\n'
+                 '  - id: "00878"\n    shares: 2000\n    avg_cost: 20\n  - id: bad\n', encoding="utf-8")
+    hs = holdings.load(p)
+    assert [h.id for h in hs] == ["2317", "00878"]
+    assert hs[1].cost == 40000 and hs[1].stop_loss is None
+    pf = holdings.portfolio(hs, {"2317": 250, "00878": 30}, {"2317": "鴻海"})
+    assert pf["total_value"] == 310000 and pf["total_pl"] == 70000
+    assert pf["rows"][0]["id"] == "2317" and pf["rows"][0]["weight"] == 80.6
+    assert pf["warnings"] and "鴻海" in pf["warnings"][0]
+    assert "合計 310,000" in holdings.summary_text(pf)
+
+
+def test_check_stops_dedupe_and_shared_state():
+    hs = [holdings.Holding("2330", 1000, 1_000_000, 950, 1100)]
+    state = {}
+    alerts.check([config.Stock("2330", below=960)], {"2330": _q(940)}, {}, state, "20261112")
+    m = holdings.check_stops(hs, {"2330": _q(940)}, {}, state, "20261112")
+    assert len(m) == 1 and "停損" in m[0]
+    assert set(state["20261112"]) == {"2330:below", "H:2330:stop"}
+    assert holdings.check_stops(hs, {"2330": _q(930)}, {}, state, "20261112") == []
+    # 價格提醒再跑一次不會把停損紀錄洗掉
+    alerts.check([config.Stock("2330", below=960)], {"2330": _q(930)}, {}, state, "20261112")
+    assert "H:2330:stop" in state["20261112"]
+
+
+def test_repo_holdings_valid():
+    assert all(h.shares > 0 and h.cost > 0 for h in holdings.load())

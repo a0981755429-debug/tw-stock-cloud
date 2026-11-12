@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import config, data, notify
+from stockapp import config, data, holdings, notify
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -104,13 +104,29 @@ def main(argv=None) -> int:
     except Exception as e:  # noqa: BLE001
         log.warning("官方收盤價校正失敗：%s", e)
 
+    # 持股損益
+    pf = None
+    hs = holdings.load()
+    if hs:
+        prices = {it["id"]: it["close"] for it in items if it["close"] is not None}
+        names = {sid: v["name"] for sid, v in info.items()}
+        names.update({it["id"]: it["name"] for it in items})
+        missing = [h.id for h in hs if h.id not in prices]
+        if missing:
+            qs = data.live_quotes([(sid, info.get(sid, {}).get("market", "twse")) for sid in missing])
+            prices.update({sid: q.price for sid, q in qs.items()})
+        pf = holdings.portfolio(hs, prices, names)
+
     config.DOCS.mkdir(exist_ok=True)
-    out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": items}
+    out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": items, "portfolio": pf}
     (config.DOCS / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log.info("已寫入 docs/data.json（%d 檔）", len(items))
 
     if not args.no_push and settings.signal_notify and items:
-        notify.telegram(summary_message(items, now.strftime("%m/%d")))
+        msg = summary_message(items, now.strftime("%m/%d"))
+        if pf:
+            msg += "\n\n" + holdings.summary_text(pf)
+        notify.telegram(msg)
     ok = sum(1 for it in items if it["close"] is not None)
     if settings.stocks and ok == 0:
         log.error("所有股票都抓不到價格，可能資料來源暫時故障")

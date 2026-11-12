@@ -62,6 +62,14 @@ th{color:var(--muted);font-weight:500}
 .foot{color:var(--muted);font-size:12px;text-align:center;margin-top:18px}
 a{color:var(--accent)}
 .live{font-size:11px;color:var(--muted)}
+.pf{padding:14px}
+.pf h2{font-size:15px;margin:0 0 8px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.kpis .kv b{font-size:16px}
+.wbar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:8px 0 4px;background:var(--chip)}
+.wbar span{display:block;height:100%}
+.hold td:nth-child(n+2){white-space:nowrap}
+.warn{color:#b7791f;font-size:13px;margin-top:6px}
 </style>
 </head>
 <body>
@@ -70,12 +78,14 @@ a{color:var(--accent)}
   <div class="sub" id="upd">載入中…</div>
   <div class="tabs" id="tabs">
     <button class="tab on" data-f="all">全部</button>
+    <button class="tab" data-f="hold">持股</button>
     <button class="tab" data-f="bull">偏多</button>
     <button class="tab" data-f="bear">偏空</button>
     <button class="tab" data-f="alert">有設提醒</button>
   </div>
 </header>
 <main>
+  <div id="pf"></div>
   <div id="list"><div class="empty">載入中…</div></div>
   <div class="foot">
     <a id="edit" href="#">✏️ 編輯自選股與提醒</a><br>
@@ -146,10 +156,47 @@ function alertText(a){
   return parts.length ? "通知條件：" + parts.join("、") : "未設定價格提醒";
 }
 
+const PALETTE = ["#2f6fde","#c9a227","#8e5bd0","#16a3a3","#e07b39","#7a8699"];
+function renderPf(){
+  const pf = DATA && DATA.portfolio;
+  const el = $("#pf");
+  if (!pf || !pf.rows || !pf.rows.length || !(FILTER === "all" || FILTER === "hold")) { el.innerHTML = ""; return; }
+  // 盤中用即時價重算
+  const rows = pf.rows.map(r => {
+    const q = QUOTES[r.id]; const price = q && q.live ? q.price : r.price;
+    const value = price == null ? null : price * r.shares;
+    return {...r, price, value, pl: value == null ? null : value - r.cost};
+  });
+  const tv = rows.reduce((a, r) => a + (r.value || 0), 0);
+  const tc = rows.reduce((a, r) => a + (r.value == null ? 0 : r.cost), 0);
+  const tpl = tv - tc;
+  const live = rows.some(r => QUOTES[r.id] && QUOTES[r.id].live);
+  el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "盤中即時" : "收盤"}</span></h2>
+    <div class="kpis">
+      <div class="kv"><span>總市值</span><b>${num(tv, 0)}</b></div>
+      <div class="kv"><span>總成本</span><b>${num(tc, 0)}</b></div>
+      <div class="kv"><span>未實現損益</span><b class="${cls(tpl)}">${tpl > 0 ? "+" : ""}${num(tpl, 0)}<br><small>${tc ? pct(tpl / tc * 100) : "—"}</small></b></div>
+    </div>
+    <div class="wbar">${rows.map((r, i) => r.value ? `<span style="width:${(r.value / tv * 100).toFixed(2)}%;background:${PALETTE[i % PALETTE.length]}"></span>` : "").join("")}</div>
+    <table class="hold"><tr><th>股票</th><th>股數</th><th>均價／現價</th><th>損益</th><th>占比</th></tr>
+    ${rows.map((r, i) => `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PALETTE[i % PALETTE.length]};margin-right:4px"></i>${esc(r.name)}<div class="live">${esc(r.id)}${r.stop_loss != null ? " · 停損 " + r.stop_loss : ""}${r.take_profit != null ? " · 停利 " + r.take_profit : ""}</div></td>
+      <td>${num(r.shares, 0)}</td><td>${num(r.avg_cost)}<br>${num(r.price)}</td>
+      <td class="${cls(r.pl)}">${r.pl == null ? "—" : (r.pl > 0 ? "+" : "") + num(r.pl, 0)}<br><small>${r.pl == null ? "" : pct(r.pl / r.cost * 100)}</small></td>
+      <td>${r.value && tv ? (r.value / tv * 100).toFixed(0) + "%" : "—"}</td></tr>`).join("")}
+    </table>
+    ${(pf.warnings || []).map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("")}
+    <div class="live" style="margin-top:6px">損益未扣賣出手續費與證交稅 · <a id="editH" href="#">編輯持股</a></div></div>`;
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/), repo = location.pathname.split("/").filter(Boolean)[0];
+  $("#editH").href = m && repo ? `https://github.com/${m[1]}/${repo}/edit/main/holdings.yml` : "../holdings.yml";
+}
+
 function render(){
   if (!DATA) return;
+  renderPf();
+  const held = new Set(((DATA.portfolio || {}).rows || []).map(r => r.id));
   const list = DATA.stocks.filter(s =>
     FILTER === "all" ||
+    (FILTER === "hold" && held.has(s.id)) ||
     (FILTER === "bull" && s.signal.label === "偏多") ||
     (FILTER === "bear" && s.signal.label === "偏空") ||
     (FILTER === "alert" && Object.values(s.alert || {}).some(v => v != null)));

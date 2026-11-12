@@ -9,7 +9,7 @@ import json
 import logging
 from datetime import datetime, time, timedelta, timezone
 
-from stockapp import alerts, config, data, notify
+from stockapp import alerts, config, data, holdings, notify
 
 log = logging.getLogger("intraday")
 TPE = timezone(timedelta(hours=8))
@@ -29,6 +29,8 @@ def main(argv=None) -> int:
         return 0
 
     settings = config.load()
+    hs = holdings.load()
+    ids = list(dict.fromkeys([s.id for s in settings.stocks] + [h.id for h in hs]))
     # 名稱 / 上市櫃別：優先用盤後產生的 data.json，省一次 FinMind 呼叫
     names, markets = {}, {}
     try:
@@ -38,14 +40,14 @@ def main(argv=None) -> int:
             markets[it["id"]] = "tpex" if it.get("market") == "上櫃" else "twse"
     except (FileNotFoundError, ValueError):
         pass
-    missing = [s.id for s in settings.stocks if s.id not in markets]
+    missing = [sid for sid in ids if sid not in markets]
     if missing:
         info = data.stock_info()
         for sid in missing:
             names[sid] = info.get(sid, {}).get("name", sid)
             markets[sid] = info.get(sid, {}).get("market", "twse")
 
-    quotes = data.live_quotes([(s.id, markets[s.id]) for s in settings.stocks])
+    quotes = data.live_quotes([(sid, markets[sid]) for sid in ids])
     today = now.strftime("%Y%m%d")
     # 交易所資料日期不是今天 → 今天休市（國定假日），不發提醒
     if not args.force and quotes and all(q.date and q.date != today for q in quotes.values()):
@@ -54,6 +56,7 @@ def main(argv=None) -> int:
 
     state = config.load_state()
     msgs = alerts.check(settings.stocks, quotes, names, state, today)
+    msgs += holdings.check_stops(hs, quotes, names, state, today)
     if msgs and not args.no_push:
         notify.telegram("🔔 到價提醒\n\n" + "\n".join(msgs))
     if not args.no_push:
