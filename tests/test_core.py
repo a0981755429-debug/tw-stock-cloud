@@ -209,3 +209,42 @@ def test_yield_alert():
     m = alerts.check(stocks, {"00878": q}, {}, {}, "20261112", {"00878": 3.0})
     assert len(m) == 1 and "殖利率 10.0%" in m[0]
     assert alerts.check(stocks, {"00878": q}, {}, {}, "20261112", {"00878": 2.0}) == []
+
+
+# ---- 交易紀錄提醒 ----
+def _encrypt_vault(obj, password, iterations=1000):
+    import base64, os as _os
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    salt, iv = _os.urandom(16), _os.urandom(12)
+    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=iterations).derive(password.encode())
+    ct = AESGCM(key).encrypt(iv, json.dumps(obj).encode(), None)
+    b = lambda x: base64.b64encode(x).decode()
+    return {"v": 1, "kdf": "PBKDF2-SHA256", "iter": iterations, "salt": b(salt), "iv": b(iv), "ct": b(ct)}
+
+
+def test_journal_decrypt_and_reminders(tmp_path, monkeypatch):
+    from datetime import date
+    from stockapp import journal
+    trades = [
+        {"sid": "2317", "name": "鴻海", "thesis": "AI 伺服器出貨放量", "wrongIf": "跌破季線", "stop": 205,
+         "nextReview": "2026-11-10", "fills": [{"date": "2026-10-01", "side": "買", "shares": 1000, "price": 220}]},
+        {"sid": "00878", "name": "國泰永續高股息", "nextReview": "2026-12-30",
+         "fills": [{"date": "2026-03-01", "side": "買", "shares": 1000, "price": 20}]},
+        {"sid": "2330", "name": "台積電", "nextReview": "2026-11-01", "stop": 900,   # 已結案：不提醒
+         "fills": [{"date": "2026-09-01", "side": "買", "shares": 1000, "price": 1000},
+                   {"date": "2026-10-01", "side": "賣", "shares": 1000, "price": 950}]},
+    ]
+    p = tmp_path / "vault.json"
+    p.write_text(json.dumps(_encrypt_vault({"trades": trades}, "pw123456")), encoding="utf-8")
+    monkeypatch.setenv("JOURNAL_PASS", "wrong")
+    assert journal.load(p) is None
+    monkeypatch.setenv("JOURNAL_PASS", "pw123456")
+    jd = journal.load(p)
+    assert journal.to_watch(jd) == ["2317"]
+    msg = journal.reminders(jd, {"2317": 200.0, "00878": 21.0}, date(2026, 11, 12))
+    assert "2317 鴻海 現價 200 ≤ 停損 205" in msg
+    assert "2317 鴻海（持有 42 天）" in msg
+    assert "00878" not in msg and "2330" not in msg
+    assert journal.reminders(jd, {"2317": 230.0}, date(2026, 11, 1)) == ""
