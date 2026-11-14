@@ -13,7 +13,7 @@ def telegram(text: str) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
-        log.info("未設定 Telegram，略過推播。訊息內容：\n%s", text)
+        log.info("未設定 Telegram，略過推播（內容可能含持股金額，不印在公開 log）")
         return False
     ok = True
     for i in range(0, len(text), 4000):  # Telegram 單則上限 4096 字
