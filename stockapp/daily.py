@@ -7,11 +7,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import config, data, holdings, journal, notify
+from stockapp import config, data, holdings, insights, journal, notify
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -23,17 +23,25 @@ def _round(x, n=2):
     return None if x is None or pd.isna(x) else round(float(x), n)
 
 
-def etf_signal(stock: config.Stock, close: float | None, div: dict, prem: dict | None) -> dict:
-    """ETF 不打技術分數：改看殖利率、配息、除息日、折溢價。"""
+def etf_signal(stock: config.Stock, close: float | None, div: dict, prem: dict | None,
+               nxt: dict | None = None) -> dict:
+    """ETF 不打技術分數：改看殖利率、配息、除息日、折溢價。
+
+    nxt = FinMind 股利政策表抓到的「已公告、還沒除息」那一次；有的話優先，沒有才用 watchlist.yml 手填的。
+    """
     reasons = []
+    next_ex, next_dps, src = stock.next_ex or None, stock.next_dps, "手填" if stock.next_ex else None
+    if nxt:
+        next_ex, next_dps, src = nxt["ex"], nxt["dps"], "自動"
     y = None
     if div.get("ttm_dps") and close:
         y = div["ttm_dps"] / close * 100
         reasons.append(f"近一年配息 {div['ttm_dps']:g} 元（{div['count']} 次），以現價計殖利率約 {y:.1f}%")
     if div.get("last_ex"):
         reasons.append(f"最近一次除息 {div['last_ex']}，每股 {div['last_dps']:g} 元")
-    if stock.next_ex:
-        reasons.append(f"下次除息 {stock.next_ex}" + (f"，預估每股 {stock.next_dps:g} 元" if stock.next_dps else ""))
+    if next_ex:
+        reasons.append(f"下次除息 {next_ex}" + (f"，每股 {next_dps:g} 元" if next_dps else "")
+                       + ("（投信已公告）" if src == "自動" else "（手填）"))
     if prem and prem.get("premium_pct") is not None:
         p = prem["premium_pct"]
         tag = "溢價偏高，不宜追買" if p > 1 else "折價，相對便宜" if p < -0.5 else "接近淨值"
@@ -41,7 +49,7 @@ def etf_signal(stock: config.Stock, close: float | None, div: dict, prem: dict |
     reasons.append("高股息 ETF 以長期領息為主，不使用技術訊號與停損")
     return {"score": 0, "label": "ETF", "reasons": reasons, "events": [], "indicators": {},
             "etf": {"yield": round(y, 2) if y else None, **div,
-                    "next_ex": stock.next_ex or None, "next_dps": stock.next_dps,
+                    "next_ex": next_ex, "next_dps": next_dps, "next_src": src,
                     "premium_pct": (prem or {}).get("premium_pct"), "nav": (prem or {}).get("nav")}}
 
 
@@ -76,21 +84,53 @@ def build_stock(stock: config.Stock, info: dict, premiums: dict | None = None) -
         ]
         item["high_52w"] = _round(close.tail(250).max())
         item["low_52w"] = _round(close.tail(250).min())
+    today = date.today()
+    events = _safe(lambda: data.dividend_events(stock.id), [], f"{stock.id} 配息行事曆")
+    item["dividends"] = events[-8:]
+    item["_div_all"] = events          # 完整清單給持股算含息報酬用，不寫進 data.json
+    nxt = insights.next_dividend(events, today)
     if data.is_etf(stock.id):
-        try:
-            div = data.dividends(stock.id, market)
-        except Exception as e:  # noqa: BLE001
-            log.warning("%s 配息抓取失敗: %s", stock.id, e)
-            div = {}
-        item["signal"] = etf_signal(stock, item["close"], div, (premiums or {}).get(stock.id))
+        div = _safe(lambda: data.dividends(stock.id, market), {}, f"{stock.id} 配息")
+        if not div.get("ttm_dps") and events:     # Yahoo 抓不到時改用 FinMind 除息紀錄
+            past = [e for e in events if e["ex"] <= today.isoformat()]
+            if past:
+                div = {"ttm_dps": insights.ttm_dps(events, today), "last_dps": past[-1]["dps"],
+                       "last_ex": past[-1]["ex"],
+                       "count": sum(1 for e in past if e["ex"] > (today - timedelta(days=365)).isoformat())}
+        item["signal"] = etf_signal(stock, item["close"], div, (premiums or {}).get(stock.id), nxt)
         item["fundamentals"] = {}
         return item
-    try:
-        item["fundamentals"] = data.fundamentals(stock.id)
-    except Exception as e:  # noqa: BLE001
-        log.warning("%s 財報抓取失敗: %s", stock.id, e)
-        item["fundamentals"] = {}
+    item["fundamentals"] = _safe(lambda: data.fundamentals(stock.id), {}, f"{stock.id} 財報")
+    item["fundamentals"]["next_dividend"] = nxt
+    item["fundamentals"]["health"] = _safe(lambda: data.health(stock.id), {}, f"{stock.id} 財務體質")
+    item["chips"] = _safe(lambda: data.chips(stock.id), {}, f"{stock.id} 籌碼")
+    _add_insights(item)
     return item
+
+
+def _safe(fn, default, what: str):
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        log.warning("%s 抓取失敗: %s", what, e)
+        return default
+
+
+def _add_insights(item: dict) -> None:
+    """把籌碼 / 財務體質整理成白話理由；「今天剛發生」的（法人連買 3/5/10 天、融資剛過熱）也列入推播事件。"""
+    ch, h = item.get("chips") or {}, item["fundamentals"].get("health") or {}
+    sig = item["signal"]
+    events = (ch.get("institutional") or {}).get("events", []) + (ch.get("margin") or {}).get("events", [])
+    item["chip_reasons"] = (insights.institutional_reasons(ch.get("institutional"))
+                            + insights.margin_reasons(ch.get("margin"))
+                            + insights.foreign_reasons(ch.get("foreign")))
+    item["health_reasons"] = insights.health_reasons(h.get("cash_flow"), h.get("balance"))
+    nxt = item["fundamentals"].get("next_dividend")
+    if nxt:
+        sig["reasons"].append(f"下次除息 {nxt['ex']}，每股現金股利 {nxt['dps']:g} 元（已公告）")
+    for ev in events:
+        sig["events"].append(ev)
+        sig["reasons"].append(ev)
 
 
 def summary_message(items: list[dict], today: str) -> str:
@@ -168,10 +208,15 @@ def main(argv=None) -> int:
         if missing:
             qs = data.live_quotes([(sid, info.get(sid, {}).get("market", "twse")) for sid in missing])
             prices.update({sid: q.price for sid, q in qs.items()})
-        pf = holdings.portfolio(hs, prices, names)
+        div_events = {it["id"]: it.get("_div_all") or [] for it in items}
+        for h in hs:
+            if h.id not in div_events:
+                div_events[h.id] = _safe(lambda: data.dividend_events(h.id), [], f"{h.id} 配息行事曆")
+        pf = holdings.portfolio(hs, prices, names, div_events, now.date())
 
     config.DOCS.mkdir(exist_ok=True)
-    out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": items,
+    public_items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in items]
+    out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": public_items,
            "portfolio": holdings.public_view(pf) if pf else None}
     (config.DOCS / "data.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     log.info("已寫入 docs/data.json（%d 檔）", len(items))
@@ -180,6 +225,9 @@ def main(argv=None) -> int:
         msg = summary_message(items, now.strftime("%m/%d"))
         if pf:
             msg += "\n\n" + holdings.summary_text(pf)
+        dr = holdings.dividend_reminders(pf, items, now.date())
+        if dr:
+            msg += "\n\n" + dr
         jr = journal_text(items, info, now)
         if jr:
             msg += "\n\n" + jr

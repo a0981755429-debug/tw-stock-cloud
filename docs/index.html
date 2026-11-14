@@ -135,6 +135,7 @@ function fundamentals(f){
     <div class="kv"><span>股價淨值比</span><b>${num(f.pbr,2)}</b></div>
     <div class="kv"><span>殖利率</span><b>${f.dividend_yield == null ? "—" : num(f.dividend_yield,2) + "%"}</b></div>
   </div>`;
+  if (f.next_dividend) h += `<div class="live" style="margin-top:6px">下次除息 ${esc(f.next_dividend.ex)}，每股現金股利 ${num(f.next_dividend.dps, 3)} 元（已公告）</div>`;
   const eps = (f.eps || []).slice(-4);
   if (eps.length){
     const ttm = eps.reduce((a, e) => a + e.eps, 0);
@@ -149,12 +150,38 @@ function fundamentals(f){
   return h;
 }
 
+function chipsBlock(s){
+  const c = s.chips || {}, inst = c.institutional, rs = s.chip_reasons || [];
+  if (!rs.length) return "";
+  let h = `<ul>${rs.map(r => `<li class="${s.signal.events.includes(r) ? "ev" : ""}">${esc(r)}</li>`).join("")}</ul>`;
+  if (inst && inst.days && inst.days.length){
+    const d = inst.days.slice(-5).reverse();
+    h += `<table style="margin-top:8px"><tr><th>日期</th><th>外資</th><th>投信</th><th>自營商</th></tr>
+      ${d.map(r => `<tr><td>${esc(r[0].slice(5))}</td>${r.slice(1).map(v => `<td class="${cls(v)}">${v > 0 ? "+" : ""}${num(v, 0)}</td>`).join("")}</tr>`).join("")}</table>
+      <div class="live">單位：張（買超為正）</div>`;
+  }
+  return `<div class="sec"><h3>籌碼（法人・融資融券・外資持股）</h3>${h}</div>`;
+}
+
+function healthBlock(s){
+  const hl = (s.fundamentals || {}).health || {}, rs = s.health_reasons || [];
+  if (!rs.length) return "";
+  let h = `<ul>${rs.map(r => `<li>${esc(r)}</li>`).join("")}</ul>`;
+  const q = ((hl.cash_flow || {}).quarters || []).slice(-4);
+  if (q.length){
+    h += `<table style="margin-top:8px"><tr><th>季度</th><th>營業現金流</th><th>資本支出</th><th>自由現金流</th></tr>
+      ${q.slice().reverse().map(r => `<tr><td>${esc(r.quarter)}</td><td>${num(r.ocf, 1)}</td><td>${num(r.capex, 1)}</td><td class="${cls(r.fcf)}">${num(r.fcf, 1)}</td></tr>`).join("")}</table>
+      <div class="live">單位：億元</div>`;
+  }
+  return `<div class="sec"><h3>財務體質（現金流・負債）</h3>${h}</div>`;
+}
+
 function etfBlock(e){
   return `<div class="sec"><h3>配息資料</h3><div class="grid">
     <div class="kv"><span>殖利率（近一年）</span><b>${e.yield == null ? "—" : e.yield.toFixed(2) + "%"}</b></div>
     <div class="kv"><span>近一年配息</span><b>${num(e.ttm_dps, 3)} 元</b></div>
     <div class="kv"><span>最近除息</span><b>${esc(e.last_ex || "—")}</b></div>
-    <div class="kv"><span>下次除息</span><b>${esc(e.next_ex || "未填")}</b></div>
+    <div class="kv"><span>下次除息${e.next_src ? `（${esc(e.next_src)}）` : ""}</span><b>${esc(e.next_ex || "未公告")}</b></div>
     <div class="kv"><span>下次每股</span><b>${e.next_dps == null ? "—" : num(e.next_dps, 3)}</b></div>
     <div class="kv"><span>折溢價</span><b class="${e.premium_pct > 1 ? "up" : e.premium_pct < -0.5 ? "down" : ""}">${e.premium_pct == null ? "—" : pct(e.premium_pct)}</b></div>
   </div></div>`;
@@ -169,6 +196,7 @@ function alertText(a){
   return parts.length ? "通知條件：" + parts.join("、") : "未設定價格提醒";
 }
 
+function hasAnyTr(rows){ return rows.some(r => r.tr != null); }
 const PALETTE = ["#2f6fde","#c9a227","#8e5bd0","#16a3a3","#e07b39","#7a8699"];
 function renderPf(){
   const pf = DATA && DATA.portfolio;
@@ -178,7 +206,9 @@ function renderPf(){
   const rows = pf.rows.map(r => {
     const q = QUOTES[r.id], f = q && r.price ? q.price / r.price : 1;
     return {...r, live: !!q, now: q ? q.price : r.price, f,
-            pl: r.pl_pct == null ? null : ((1 + r.pl_pct / 100) * f - 1) * 100, w: (r.weight || 0) * f};
+            pl: r.pl_pct == null ? null : ((1 + r.pl_pct / 100) * f - 1) * 100, w: (r.weight || 0) * f,
+            // 含息：已領配息占成本的比例不隨股價變，只把股價部分往前推
+            tr: r.total_pl_pct == null || r.pl_pct == null ? null : ((1 + r.pl_pct / 100) * f - 1) * 100 + (r.total_pl_pct - r.pl_pct)};
   });
   const tw = rows.reduce((a, r) => a + r.w, 0) || 1;
   rows.forEach(r => r.w = r.w / tw * 100);
@@ -186,18 +216,22 @@ function renderPf(){
   // 總報酬：用占比加權（成本占比 = 市值占比 ÷ (1+報酬)）
   let cv = 0, vv = 0; rows.forEach(r => { if (r.pl == null) return; vv += r.w; cv += r.w / (1 + r.pl / 100); });
   const tpl = cv ? (vv / cv - 1) * 100 : null;
+  const hasTr = rows.length && rows.every(r => r.tr != null);
+  let ttr = null;
+  if (hasTr) { let c2 = 0, g2 = 0; rows.forEach(r => { const c = r.w / (1 + r.pl / 100); c2 += c; g2 += c * (1 + r.tr / 100); }); ttr = c2 ? (g2 / c2 - 1) * 100 : null; }
   el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "盤中即時" : "收盤"} · 只顯示百分比</span></h2>
-    <div class="kpis" style="grid-template-columns:1fr 1fr">
-      <div class="kv"><span>整體報酬（未實現）</span><b class="${cls(tpl)}">${tpl == null ? "—" : pct(tpl)}</b></div>
-      <div class="kv"><span>持股檔數</span><b>${rows.length}</b></div>
+    <div class="kpis">
+      <div class="kv"><span>股價報酬</span><b class="${cls(tpl)}">${tpl == null ? "—" : pct(tpl)}</b></div>
+      <div class="kv"><span>含息總報酬</span><b class="${cls(ttr)}">${ttr == null ? "—" : pct(ttr)}</b></div>
+      <div class="kv"><span>年領息 ÷ 市值</span><b>${pf.income_yield_pct == null ? "—" : pf.income_yield_pct.toFixed(2) + "%"}</b></div>
     </div>
     <div class="wbar">${rows.map((r, i) => `<span style="width:${r.w.toFixed(2)}%;background:${PALETTE[i % PALETTE.length]}"></span>`).join("")}</div>
-    <table class="hold"><tr><th>股票</th><th>現價</th><th>報酬</th><th>占比</th></tr>
+    <table class="hold"><tr><th>股票</th><th>現價</th><th>報酬</th>${hasAnyTr(rows) ? "<th>含息</th>" : ""}<th>占比</th></tr>
     ${rows.map((r, i) => `<tr><td><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${PALETTE[i % PALETTE.length]};margin-right:4px"></i>${esc(r.name)}<div class="live">${esc(r.id)}</div></td>
-      <td>${num(r.now)}</td><td class="${cls(r.pl)}">${r.pl == null ? "—" : pct(r.pl)}</td><td>${r.w.toFixed(0)}%</td></tr>`).join("")}
+      <td>${num(r.now)}</td><td class="${cls(r.pl)}">${r.pl == null ? "—" : pct(r.pl)}</td>${hasAnyTr(rows) ? `<td class="${cls(r.tr)}">${r.tr == null ? "—" : pct(r.tr)}</td>` : ""}<td>${r.w.toFixed(0)}%</td></tr>`).join("")}
     </table>
     ${(pf.warnings || []).map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("")}
-    <div class="live" style="margin-top:6px">金額、股數、成本只會用 Telegram 私訊給你 · 報酬未含配息、未扣賣出費用</div></div>`;
+    <div class="live" style="margin-top:6px">金額、股數、成本只會用 Telegram 私訊給你 · ${hasTr ? "含息 = 股價報酬 + 已領配息（依第一次買進日推算）" : "含息報酬：在 HOLDINGS 加上 since（第一次買進日）就會算"} · 未扣賣出費用</div></div>`;
 }
 
 function render(){
@@ -237,7 +271,8 @@ function render(){
           <div class="kv"><span>季線</span><b>${num(ind.ma60)}</b></div>
           <div class="kv"><span>52 週高 / 低</span><b>${num(s.high_52w,0)} / ${num(s.low_52w,0)}</b></div>
         </div></div>
-        <div class="sec"><h3>財報</h3>${fundamentals(s.fundamentals)}</div>`}
+        <div class="sec"><h3>財報</h3>${fundamentals(s.fundamentals)}</div>
+        ${chipsBlock(s)}${healthBlock(s)}`}
         <div class="sec"><h3>價格提醒</h3><div>${esc(alertText(s.alert || {}))}</div>${s.note ? `<div class="live">備註：${esc(s.note)}</div>` : ""}</div>
       </div></div>`;
   }).join("");

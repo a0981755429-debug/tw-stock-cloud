@@ -5,6 +5,8 @@
 - ETF 配息：yfinance 除息紀錄；折溢價：證交所 mis ETF 預估淨值
 - 盤中即時價：證交所 mis.twse.com.tw（官網即時看盤頁的後端，非正式 API）
 - 財報：FinMind 月營收、EPS、本益比（免費 dataset）
+- 配息行事曆：FinMind 股利政策表（已公告的下次除息日 / 金額）+ 除權息結果表
+- 籌碼：FinMind 三大法人買賣超、融資融券、外資持股；財務體質：現金流量表、資產負債表
 
 FinMind token 選用：沒有也能跑（每小時次數較少），在 GitHub Secrets 設 FINMIND_TOKEN 可提高上限。
 """
@@ -275,3 +277,35 @@ def fundamentals(stock_id: str) -> dict:
 def _quarter(d: str) -> str:
     y, m = int(d[:4]), int(d[5:7])
     return f"{y}Q{(m - 1) // 3 + 1}"
+
+
+# ---------------------------------------------------------------- FinMind 進階（配息、籌碼、財務體質）
+def _ago(days: int) -> str:
+    return (date.today() - timedelta(days=days)).isoformat()
+
+
+def dividend_events(stock_id: str) -> list[dict]:
+    """現金配息清單（含已公告未除息）：FinMind 股利政策表 + 除權息結果表。"""
+    from stockapp import insights
+    policy = finmind("TaiwanStockDividend", stock_id, _ago(800))
+    result = finmind("TaiwanStockDividendResult", stock_id, _ago(800))
+    return insights.dividend_events(policy, result)
+
+
+def chips(stock_id: str) -> dict:
+    """三大法人買賣超、融資融券、外資持股（個股，免費 dataset）。"""
+    from stockapp import insights
+    return {
+        "institutional": insights.institutional(finmind("TaiwanStockInstitutionalInvestorsBuySell", stock_id, _ago(45))),
+        "margin": insights.margin(finmind("TaiwanStockMarginPurchaseShortSale", stock_id, _ago(60))),
+        "foreign": insights.foreign_holding(finmind("TaiwanStockShareholding", stock_id, _ago(120))),
+    }
+
+
+def health(stock_id: str) -> dict:
+    """現金流量表（自由現金流）與資產負債表（負債比、流動比）。"""
+    from stockapp import insights
+    return {
+        "cash_flow": insights.cash_flow(finmind("TaiwanStockCashFlowsStatement", stock_id, _ago(1000))),
+        "balance": insights.balance(finmind("TaiwanStockBalanceSheet", stock_id, _ago(200))),
+    }
