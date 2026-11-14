@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 holdings.yml
+
+# shioaji 產生的檔案
+shioaji.log
+*.log
+contracts/

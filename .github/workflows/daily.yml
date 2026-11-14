@@ -53,4 +53,4 @@ jobs:
           git add docs/data.json
           git diff --cached --quiet && exit 0
           git commit -m "盤後資料更新 $(TZ=Asia/Taipei date +%F)"
-          git pull --rebase -X theirs origin main && git push   # 同時有別次更新時以這次的新資料為準
+          git pull --rebase --autostash -X theirs origin main && git push   # 同時有別次更新時以這次的新資料為準

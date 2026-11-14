@@ -37,8 +37,12 @@ def excluded() -> set[str]:
     return {str(x).strip() for x in (ex or [])}
 
 
+LAST_ERROR = ""
+
+
 def fetch_positions() -> dict[str, tuple[float, float]] | None:
-    """回傳 {代號: (股數, 總成本)}；失敗回 None（不印細節，避免外洩）。"""
+    """回傳 {代號: (股數, 總成本)}；失敗回 None。公開 log 只印錯誤類型，細節走 Telegram 私訊。"""
+    global LAST_ERROR
     try:
         import shioaji as sj
     except ImportError:
@@ -52,6 +56,7 @@ def fetch_positions() -> dict[str, tuple[float, float]] | None:
         rows = api.list_positions(account=api.stock_account, unit=unit.Share)
     except Exception as e:  # noqa: BLE001
         log.warning("永豐庫存讀取失敗（%s），改用 HOLDINGS", type(e).__name__)
+        LAST_ERROR = f"{type(e).__name__}: {str(e)[:200]}"
         return None
     finally:
         try:
@@ -100,7 +105,7 @@ def sync(manual: list[Holding]) -> tuple[list[Holding], list[str]]:
         return manual, []
     pos = fetch_positions()
     if pos is None:
-        return manual, ["⚠️ 永豐庫存讀取失敗，今天先用 HOLDINGS 的資料"]
+        return manual, ["⚠️ 永豐庫存讀取失敗，今天先用 HOLDINGS 的資料", f"原因：{LAST_ERROR}"]
     if not pos and manual:  # 帳戶沒簽署完成時也可能回空的，別把持股清光
         return manual, ["⚠️ 永豐庫存是空的，今天先用 HOLDINGS 的資料（全部賣光的話請清空 HOLDINGS）"]
     return merge(manual, pos, excluded())
