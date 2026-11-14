@@ -21,12 +21,12 @@ stocks:
     next_ex: 2026-11-17
     next_dps: 1.25
     alert:
-      yield_above: 12
+      yield_above: 9
 
   - id: "00919"
     next_ex: 2026-12 中（未公告）
     alert:
-      yield_above: 12
+      yield_above: 12.5
 
   # 鴻海：做多＋財報＋波段（2026-11-12）
   - id: "2317"
@@ -37,7 +37,7 @@ stocks:
       change_pct: 4   # 財報、月營收公布後大漲大跌提醒
   - id: "0056"
     alert:
-      yield_above: 12
+      yield_above: 11
 
   # ---- 觀察中 ----
   - id: "2330"
