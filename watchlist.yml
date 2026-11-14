@@ -35,7 +35,9 @@ stocks:
       below: 228      # 波段買點
       above: 258      # 波段賣點
       change_pct: 4   # 財報、月營收公布後大漲大跌提醒
-  - id: "3501"
+  - id: "0056"
+    alert:
+      yield_above: 12
 
   # ---- 觀察中 ----
   - id: "2330"
