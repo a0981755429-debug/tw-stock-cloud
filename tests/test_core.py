@@ -378,3 +378,20 @@ def test_stock_chip_events_pushed(monkeypatch):
     assert any("外資連續買超 3 天" in e for e in it["signal"]["events"])
     assert it["chip_reasons"] and "chips" in it
     assert "外資連續買超" in daily.summary_message([it], "11/14")
+
+
+def test_daily_official_close_on_weekend(monkeypatch, tmp_path):
+    hist = make_hist(np.linspace(100, 150, 130))  # 最後一天在 2026-07
+    last = hist.index[-1]
+    newer = (last + pd.Timedelta(days=1)).strftime("%Y%m%d")
+    monkeypatch.setattr(data, "price_history", lambda sid, m: hist)
+    monkeypatch.setattr(data, "fundamentals", lambda sid: {})
+    monkeypatch.setattr(data, "stock_info", lambda: {})
+    monkeypatch.setattr(config, "DOCS", tmp_path)
+    monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2330")], signal_notify=False))
+    monkeypatch.setattr(holdings, "load", lambda: [])
+    q = data.Quote("2330", "", 152.0, 150.0, None, None, None, 10.0, "13:30:00", newer, True)
+    monkeypatch.setattr(data, "live_quotes", lambda pairs: {"2330": q})
+    assert daily.main(["--no-push"]) == 0
+    st = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["stocks"][0]
+    assert st["close"] == 152.0 and st["date"].replace("-", "") == newer and st["chart"][-1][1] == 152.0

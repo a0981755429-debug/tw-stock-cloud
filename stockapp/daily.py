@@ -190,10 +190,14 @@ def main(argv=None) -> int:
         quotes = data.live_quotes(list(mk.items()))
         for it in items:
             q = quotes.get(it["id"])
-            if q and q.is_live and q.date == now.strftime("%Y%m%d"):
+            # 交易所資料日期不早於日 K 最後一天就採用（週末重跑、或 Yahoo 的 ETF 資料晚一天時，仍是最新官方收盤）
+            qd = f"{q.date[:4]}-{q.date[4:6]}-{q.date[6:8]}" if q and len(q.date or "") == 8 else None
+            if q and q.is_live and qd and qd >= (it["date"] or ""):
                 it["close"] = round(q.price, 2)
                 it["change_pct"] = _round(q.change_pct)
-                it["date"] = now.strftime("%Y-%m-%d")
+                if it["chart"] and qd > it["chart"][-1][0]:
+                    it["chart"].append([qd, it["close"], None, None, int((q.volume_lots or 0) * 1000)])
+                it["date"] = qd
     except Exception as e:  # noqa: BLE001
         log.warning("官方收盤價校正失敗：%s", e)
 
