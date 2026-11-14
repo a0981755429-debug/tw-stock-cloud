@@ -1,0 +1,23 @@
+name: 永豐 API 模擬測試（只需跑一次）
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -q shioaji
+      - name: 模擬登入 + 模擬下單
+        env:
+          SJ_TEST_API_KEY: ${{ secrets.SJ_TEST_API_KEY }}
+          SJ_TEST_SECRET_KEY: ${{ secrets.SJ_TEST_SECRET_KEY }}
+        run: python tools/sinopac_test.py
