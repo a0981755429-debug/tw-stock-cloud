@@ -7,6 +7,11 @@ on:
     branches: [main]
     paths: ["watchlist.yml"] # 改完自選股就自動重算一次
   workflow_dispatch:         # 可在 Actions 頁面手動按「Run workflow」
+    inputs:
+      push:
+        description: "手動跑也推播 Telegram（測試用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,7 +46,7 @@ jobs:
           SJ_API_KEY: ${{ secrets.SJ_API_KEY }}
           SJ_SECRET_KEY: ${{ secrets.SJ_SECRET_KEY }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.push }}" = "true" ]; then
             python -m stockapp.daily
           else
             python -m stockapp.daily --no-push   # 手動 / 改自選股時只更新網頁，不推播
