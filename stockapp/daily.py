@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import config, data, holdings, insights, journal, notify
+from stockapp import broker, config, data, holdings, insights, journal, notify
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -203,7 +203,7 @@ def main(argv=None) -> int:
 
     # 持股損益
     pf = None
-    hs = holdings.load()
+    hs, broker_notes = broker.sync(holdings.load())
     if hs:
         prices = {it["id"]: it["close"] for it in items if it["close"] is not None}
         names = {sid: v["name"] for sid, v in info.items()}
@@ -229,6 +229,8 @@ def main(argv=None) -> int:
         msg = summary_message(items, now.strftime("%m/%d"))
         if pf:
             msg += "\n\n" + holdings.summary_text(pf)
+        if broker_notes:
+            msg += "\n\n🏦 永豐庫存同步\n" + "\n".join(broker_notes)
         dr = holdings.dividend_reminders(pf, items, now.date())
         if dr:
             msg += "\n\n" + dr

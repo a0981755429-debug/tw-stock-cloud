@@ -395,3 +395,25 @@ def test_daily_official_close_on_weekend(monkeypatch, tmp_path):
     assert daily.main(["--no-push"]) == 0
     st = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))["stocks"][0]
     assert st["close"] == 152.0 and st["date"].replace("-", "") == newer and st["chart"][-1][1] == 152.0
+
+
+def test_broker_merge_and_disabled(monkeypatch):
+    from stockapp import broker
+    from stockapp.holdings import Holding
+    manual = [Holding(id="9999", shares=1000, cost=50000, stop_loss=40, take_profit=None, since="2025-01-01"),
+              Holding(id="8888", shares=500, cost=10000, stop_loss=None, take_profit=None)]
+    pos = {"9999": (1500.0, 76000.0), "7777": (200.0, 4000.0), "6666": (100.0, 999.0)}
+    out, notes = broker.merge(manual, pos, {"6666"})
+    by = {h.id: h for h in out}
+    assert set(by) == {"9999", "7777"}                      # 8888 已賣出、6666 排除
+    assert by["9999"].shares == 1500 and by["9999"].cost == 76000
+    assert by["9999"].stop_loss == 40 and by["9999"].since == "2025-01-01"
+    assert by["7777"].avg_cost == 20
+    assert any("8888" in n for n in notes)
+    # 股數沒變就沿用手填成本
+    out2, _ = broker.merge(manual[:1], {"9999": (1000.0, 49000.0)}, set())
+    assert out2[0].cost == 50000
+    monkeypatch.delenv("SJ_API_KEY", raising=False)
+    assert broker.sync(manual) == (manual, [])
+    monkeypatch.setenv("HOLDINGS", "holdings: []\nexclude: ['6666', 5555]")
+    assert broker.excluded() == {"6666", "5555"}

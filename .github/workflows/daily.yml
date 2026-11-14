@@ -26,6 +26,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: （選用）永豐 API 套件
+        env:
+          SJ_API_KEY: ${{ secrets.SJ_API_KEY }}
+        run: if [ -n "$SJ_API_KEY" ]; then pip install -q shioaji; fi
       - run: python -m pytest -q
       - name: 抓資料、算訊號、推播
         env:
@@ -34,6 +38,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HOLDINGS: ${{ secrets.HOLDINGS }}
           JOURNAL_PASS: ${{ secrets.JOURNAL_PASS }}
+          SJ_API_KEY: ${{ secrets.SJ_API_KEY }}
+          SJ_SECRET_KEY: ${{ secrets.SJ_SECRET_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             python -m stockapp.daily

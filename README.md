@@ -56,6 +56,17 @@ holdings:
 
 買賣後到同一個地方按「Update」改內容（Secrets 存了以後看不到舊內容，建議自己另外留一份）。
 
+### 3-1.（選用）永豐帳戶自動同步庫存
+
+永豐金證券的客戶可以讓系統每天盤後自動讀庫存，買賣後就不用手動改 `HOLDINGS` 的股數。只會「查庫存」，不會下單，也不用裝憑證。
+
+1. 到永豐「理財網 › API 管理」（https://www.sinotrade.com.tw/newweb/PythonAPIKey/）簽署 API 使用條款，完成官方要求的模擬測試。
+2. 新增 API Key：權限**只勾「帳務」和「正式環境」，不要勾「交易」**（這把鑰匙就算外洩也不能下單）。IP 限制不要設，GitHub 主機的 IP 每次都不同。Secret Key 只會出現一次，記得先抄下來。
+3. 到 Settings › Secrets › Actions 新增兩個：`SJ_API_KEY`、`SJ_SECRET_KEY`。
+4. 不想列入的股票（例如借名），在 `HOLDINGS` 最上面加一行：`exclude: ["代號"]`。
+
+同步規則：股數以永豐為準；股數沒變就沿用你填的成本（含手續費較準），有變就改用永豐的均價。停損停利、`since` 一樣照 `HOLDINGS`。`HOLDINGS` 有、永豐沒有的會當成已賣出，Telegram 會告訴你哪幾檔變了。讀取失敗時自動改用 `HOLDINGS`。
+
 ### 4.（選用）FinMind 金鑰
 
 財報、配息、籌碼資料來自 [FinMind](https://finmindtrade.com/)。每檔個股每天大約用 10 次（ETF 約 2 次），免費版不註冊每小時 300 次、註冊後 600 次。自選股超過 20 檔建議免費註冊拿 Token，加一個 secret：`FINMIND_TOKEN`。
