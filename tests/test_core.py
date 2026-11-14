@@ -248,3 +248,133 @@ def test_journal_decrypt_and_reminders(tmp_path, monkeypatch):
     assert "2317 鴻海（持有 42 天）" in msg
     assert "00878" not in msg and "2330" not in msg
     assert journal.reminders(jd, {"2317": 230.0}, date(2026, 11, 1)) == ""
+
+
+# ---- FinMind 進階：配息、籌碼、財務體質 ----
+from datetime import date as _date
+
+from stockapp import insights
+
+
+def _policy():
+    return pd.DataFrame([
+        {"date": "2026-11-18", "stock_id": "00878", "CashEarningsDistribution": 1.25, "CashStatutorySurplus": 0,
+         "CashExDividendTradingDate": "2026-11-17", "CashDividendPaymentDate": "2026-12-12"},
+        {"date": "2026-08-19", "stock_id": "00878", "CashEarningsDistribution": 0.4, "CashStatutorySurplus": 0,
+         "CashExDividendTradingDate": "2026-08-18", "CashDividendPaymentDate": ""},
+        {"date": "2026-01-01", "stock_id": "00878", "CashEarningsDistribution": 0, "CashStatutorySurplus": 0,
+         "CashExDividendTradingDate": "", "CashDividendPaymentDate": ""},
+    ])
+
+
+def _result():
+    return pd.DataFrame([
+        {"date": "2026-05-19", "stock_or_cache_dividend": "息", "stock_and_cache_dividend": 0.5},
+        {"date": "2026-08-18", "stock_or_cache_dividend": "息", "stock_and_cache_dividend": 0.4},   # 跟政策表重複
+        {"date": "2025-07-01", "stock_or_cache_dividend": "權息", "stock_and_cache_dividend": 3.0},  # 混股票股利，不算
+    ])
+
+
+def test_dividend_events_merge_and_next():
+    ev = insights.dividend_events(_policy(), _result())
+    assert [e["ex"] for e in ev] == ["2026-05-19", "2026-08-18", "2026-11-17"]
+    nxt = insights.next_dividend(ev, _date(2026, 11, 14))
+    assert nxt == {"ex": "2026-11-17", "dps": 1.25, "pay": "2026-12-12"}
+    assert insights.ttm_dps(ev, _date(2026, 11, 14)) == 0.9
+    assert insights.received(ev, "2026-05-19", _date(2026, 11, 14)) == (0.4, 1)   # 除息當天才買 → 領不到
+
+
+def test_etf_uses_announced_dividend(monkeypatch):
+    monkeypatch.setattr(data, "price_history", lambda sid, m: make_hist(np.linspace(30, 33, 130)))
+    monkeypatch.setattr(data, "dividends", lambda sid, m: {})
+    monkeypatch.setattr(data, "dividend_events", lambda sid: insights.dividend_events(_policy(), _result()))
+    monkeypatch.setattr(daily, "date", type("D", (), {"today": staticmethod(lambda: _date(2026, 11, 14))}))
+    it = daily.build_stock(config.Stock("00878", next_ex="2026-12 中（未公告）"), {})
+    etf = it["signal"]["etf"]
+    assert etf["next_ex"] == "2026-11-17" and etf["next_dps"] == 1.25 and etf["next_src"] == "自動"
+    assert etf["ttm_dps"] == 0.9 and etf["last_ex"] == "2026-08-18"    # Yahoo 沒資料時改用 FinMind
+
+
+def test_portfolio_total_return_with_dividends():
+    ev = {"00878": insights.dividend_events(_policy(), _result())}
+    hs = [holdings.Holding("00878", 10000, 250000, None, None, since="2026-01-01")]
+    pf = holdings.portfolio(hs, {"00878": 30}, {}, ev, _date(2026, 11, 14))
+    r = pf["rows"][0]
+    assert r["div_received"] == 9000 and r["div_count"] == 2
+    assert r["pl_pct"] == 20.0 and r["total_pl_pct"] == 23.6
+    assert r["annual_income"] == 9000 and r["next_div"]["amount"] == 12500
+    assert pf["total_return_pct"] == 23.6
+    pv = json.dumps(holdings.public_view(pf))
+    for leak in ("9000", "12500", "250000", "shares", "amount", "div_received"):
+        assert leak not in pv
+    txt = holdings.summary_text(pf)
+    assert "已領息 9,000" in txt and "含息總報酬" in txt
+    rem = holdings.dividend_reminders(pf, [], _date(2026, 11, 14))
+    assert "11-17 除息" in rem and "預計領 12,500" in rem
+    # 沒填 since 也沒填 dividends → 不亂猜
+    pf2 = holdings.portfolio([holdings.Holding("00878", 10000, 250000, None, None)], {"00878": 30}, {}, ev, _date(2026, 11, 14))
+    assert pf2["rows"][0]["total_pl_pct"] is None and pf2["total_return_pct"] is None
+
+
+def _inst(days):
+    rows = []
+    for i, (f, t) in enumerate(days):
+        d = f"2026-10-{i + 1:02d}"
+        rows += [{"date": d, "name": "Foreign_Investor", "buy": max(f, 0) * 1000, "sell": max(-f, 0) * 1000},
+                 {"date": d, "name": "Investment_Trust", "buy": max(t, 0) * 1000, "sell": max(-t, 0) * 1000},
+                 {"date": d, "name": "Dealer_self", "buy": 0, "sell": 0}]
+    return pd.DataFrame(rows)
+
+
+def test_institutional_streaks():
+    x = insights.institutional(_inst([(-100, 5), (200, -5), (300, -5), (400, 10)]))
+    assert x["foreign"]["streak"] == 3 and x["foreign"]["sum5"] == 800 and x["trust"]["streak"] == 1
+    assert x["events"] == ["外資連續買超 3 天（累計 +900 張）"]
+    assert insights.institutional(_inst([(-1, 0)] * 4))["events"] == []  # 4 天不是里程碑
+    assert "外資今日" in insights.institutional_reasons(x)[0]
+
+
+def test_margin_hot_once():
+    bal = [1000] * 21 + [1200]
+    df = pd.DataFrame({"date": [f"d{i:02d}" for i in range(len(bal))], "MarginPurchaseTodayBalance": bal,
+                       "ShortSaleTodayBalance": [60] * len(bal), "MarginPurchaseLimit": [10000] * len(bal)})
+    m = insights.margin(df)
+    assert m["hot"] and m["change_20d_pct"] == 20.0 and m["usage_pct"] == 12.0 and m["short_ratio_pct"] == 5.0
+    assert m["events"]
+    df2 = pd.concat([df, df.tail(1).assign(date="d99")])   # 隔天還是過熱 → 不重複推播
+    assert insights.margin(df2)["hot"] and insights.margin(df2)["events"] == []
+
+
+def test_foreign_cashflow_balance():
+    f = insights.foreign_holding(pd.DataFrame({"date": [f"d{i:02d}" for i in range(25)],
+                                               "ForeignInvestmentSharesRatio": [40 + i * 0.1 for i in range(25)]}))
+    assert f["ratio"] == 42.4 and f["change_20d"] == 2.0 and f["change_60d"] is None
+    cf = []
+    for d, ocf, cap in [("2025-12-31", 400, -200), ("2026-03-31", 100, -30), ("2026-06-30", 250, -80),
+                        ("2026-09-30", 300, -120), ("2025-09-30", 280, -150)]:
+        cf += [{"date": d, "type": "CashFlowsFromOperatingActivities", "value": ocf * 1e8},
+               {"date": d, "type": "PropertyAndPlantAndEquipment", "value": cap * 1e8}]
+    c = insights.cash_flow(pd.DataFrame(cf))
+    assert [q["quarter"] for q in c["quarters"]] == ["2025Q4", "2026Q1", "2026Q2", "2026Q3"]  # 2025Q3 缺 Q2 無法拆單季
+    assert c["quarters"][-1] == {"quarter": "2026Q3", "ocf": 50.0, "capex": -40.0, "fcf": 10.0}
+    assert c["ttm"] == {"ocf": 420.0, "capex": -170.0, "fcf": 250.0}
+    bs = insights.balance(pd.DataFrame([
+        {"date": "2026-09-30", "type": "TotalAssets", "value": 1000, "origin_name": "資產總計"},
+        {"date": "2026-09-30", "type": "Liabilities", "value": 550, "origin_name": "負債總計"},
+        {"date": "2026-09-30", "type": "Liabilities_per", "value": 55, "origin_name": "負債總計"},
+        {"date": "2026-09-30", "type": "CurrentAssets", "value": 600, "origin_name": "流動資產合計"},
+        {"date": "2026-09-30", "type": "CurrentLiabilities", "value": 400, "origin_name": "流動負債合計"},
+        {"date": "2026-06-30", "type": "TotalAssets", "value": 1, "origin_name": "資產總計"},
+    ]))
+    assert bs == {"date": "2026-09-30", "debt_ratio": 55.0, "current_ratio": 150.0}
+    assert any("自由現金流 +250.0 億" in s for s in insights.health_reasons(c, bs))
+
+
+def test_stock_chip_events_pushed(monkeypatch):
+    monkeypatch.setattr(data, "price_history", lambda sid, m: make_hist(np.linspace(100, 150, 130)))
+    monkeypatch.setattr(data, "fundamentals", lambda sid: {"eps": [], "revenue": []})
+    monkeypatch.setattr(data, "chips", lambda sid: {"institutional": insights.institutional(_inst([(-1, 0), (5, 0), (5, 0), (5, 0)]))})
+    it = daily.build_stock(config.Stock("2317"), {})
+    assert any("外資連續買超 3 天" in e for e in it["signal"]["events"])
+    assert it["chip_reasons"] and "chips" in it
+    assert "外資連續買超" in daily.summary_message([it], "11/14")
