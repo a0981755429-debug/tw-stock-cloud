@@ -55,6 +55,7 @@ jobs:
         continue-on-error: true
         env:
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: python -m stockapp.analysts
       - name: 存檔
         run: |

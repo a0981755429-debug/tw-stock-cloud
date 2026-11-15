@@ -9,6 +9,7 @@
 - 收藏觀點：analyst_notes.yml（自己貼作者、摘要、連結）
 - 公開資訊觀測站重大訊息：證交所 / 櫃買中心 OpenAPI（官方開放資料，每天一次，不爬 MOPS 網頁），
   每天累積進 analysts.json、保留近 MOPS_KEEP_DAYS 天；每檔另附 MOPS 公司總覽 / 重大訊息連結
+- SEC EDGAR：有美國 ADR 的（台積電 TSM、聯電 UMC、日月光 ASX）抓 data.sec.gov 官方申報清單 + EDGAR 搜尋連結
 
 本機測試：python -m stockapp.analysts
 """
@@ -17,8 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import statistics
+import time
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -40,6 +43,18 @@ MOPS_OPENAPI = [
     "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap04_O",  # 上櫃公司每日重大訊息
 ]
 MOPS_BASE = "https://mopsov.twse.com.tw/mops/web/"
+# SEC EDGAR：有美國 ADR 的台股，用 data.sec.gov 官方 JSON 抓申報（6-K 臨時報告、20-F 年報、內部人申報…）
+SEC_CIK = {"TSM": "0001046179", "UMC": "0001033767", "ASX": "0001122411"}
+SEC_KEEP_DAYS = 90
+SEC_FORMS_ZH = {"6-K": "臨時報告", "20-F": "年報", "20-F/A": "年報更正", "10-K": "年報", "10-Q": "季報",
+                "8-K": "重大事項", "SC 13G": "大股東持股", "SC 13G/A": "大股東持股更新", "SC 13D": "大股東持股",
+                "4": "內部人持股異動", "3": "內部人初次申報", "144": "內部人擬出售", "F-3": "發行登記",
+                "S-8": "員工股票計畫登記", "424B2": "公開說明書", "SCHEDULE 13G": "大股東持股",
+                "SCHEDULE 13G/A": "大股東持股更新", "SCHEDULE 13D": "大股東持股"}
+# 6-K 檔名常帶主題，沒有文件標題時用來提示
+SEC_HINTS = [("revenue", "營收公告"), ("board", "董事會決議"), ("quarterly", "季報"), ("q1", "第一季"), ("q2", "第二季"),
+             ("q3", "第三季"), ("q4", "第四季"), ("monthend", "月底資訊"), ("dividend", "股利"), ("agm", "股東會"),
+             ("statement", "聲明"), ("earnings", "法說 / 財報"), ("fs", "財務報表"), ("annual", "年報")]
 
 # 越具體的放越前面（「摩根士丹利」要比「摩根」先比對到）
 BROKERS = [
@@ -238,6 +253,78 @@ def merge_mops(old: list[dict], new: list[dict], today: date) -> list[dict]:
     return out[:30]
 
 
+def _sec_get(url: str):
+    ua = os.environ.get("SEC_USER_AGENT") or "tw-stock-cloud personal dashboard"
+    r = requests.get(url, headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"}, timeout=30)
+    r.raise_for_status()
+    return r
+
+
+def sec_links(symbol: str) -> dict:
+    cik = SEC_CIK[symbol]
+    return {"search": f"https://www.sec.gov/edgar/search/#/ciks={cik}",
+            "company": f"https://www.sec.gov/edgar/browse/?CIK={cik}"}
+
+
+def parse_sec(j: dict, today: date) -> dict:
+    """data.sec.gov submissions JSON → 近 SEC_KEEP_DAYS 天的申報（內部人 Form 3/4/5 只算筆數，不逐筆列）。"""
+    cik = str(j.get("cik") or "").lstrip("0")
+    r = (j.get("filings") or {}).get("recent") or {}
+    since = (today - timedelta(days=SEC_KEEP_DAYS)).isoformat()
+    filings, insider = [], 0
+    for i, d in enumerate(r.get("filingDate") or []):
+        if d < since:
+            break
+        form = r["form"][i]
+        if form in ("3", "4", "5", "4/A"):
+            insider += 1
+            continue
+        acc = r["accessionNumber"][i]
+        doc = r["primaryDocument"][i]
+        desc = (r.get("primaryDocDescription") or [""] * (i + 1))[i] or ""
+        generic = {form.upper(), f"FORM {form.upper()}", "FORM 6-K", "6-K"}
+        low = doc.lower()
+        filings.append({"date": d, "form": form, "form_zh": SEC_FORMS_ZH.get(form, ""),
+                        "title": desc if desc and desc.upper() not in generic else "",
+                        "hint": next((zh for k, zh in SEC_HINTS if re.search(rf"(^|[^a-z]){k}", low)), ""),
+                        "link": f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc.replace('-', '')}/{doc}"})
+    return {"name": j.get("name", ""), "filings": filings[:15], "insider": insider}
+
+
+def sec_title(link: str) -> str:
+    """6-K 的檔案描述通常只寫「6-K」，打開文件抓第一段像標題的文字（例如 TSMC Reports October Revenue）。"""
+    try:
+        html = _sec_get(link).text
+    except Exception:  # noqa: BLE001
+        return ""
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    lines = [re.sub(r"\s+", " ", re.sub(r"&nbsp;|&#160;", " ", x)).strip()
+             for x in re.split(r"<(?:/p|br|/div|/td|/h\d)[^>]*>", text, flags=re.I)]
+    skip = re.compile(r"form 6-k|securities and exchange|washington|commission file|report of foreign|"
+                      r"pursuant to rule|indicate by check|^\(|^yes|^no\b|^date|signature|exhibit|^taiwan semiconductor"
+                      r"|^united microelectronics|^ase technology|^\d|^$|registrant|address|^if .yes|annual report",
+                      re.I)
+    for ln in (re.sub(r"<[^>]+>", " ", x) for x in lines):
+        ln = re.sub(r"\s+", " ", ln).strip()
+        if 12 <= len(ln) <= 160 and not skip.search(ln):
+            return ln
+    return ""
+
+
+def sec_filings(symbol: str, today: date) -> dict | None:
+    if symbol not in SEC_CIK:
+        return None
+    out = parse_sec(_sec_get(f"https://data.sec.gov/submissions/CIK{SEC_CIK[symbol]}.json").json(), today)
+    # 打開文件抓標題要連 www.sec.gov，SEC 規定要附聯絡方式的 User-Agent；
+    # 有在 Secrets 設 SEC_USER_AGENT（例如「名字 email」）才抓，沒設就只用檔名提示
+    for f in (out["filings"][:6] if os.environ.get("SEC_USER_AGENT") else []):
+        if not f["title"]:
+            time.sleep(0.3)                    # SEC 上限每秒 10 次，放慢一點
+            f["title"] = sec_title(f["link"])
+    out.update(symbol=symbol, links=sec_links(symbol))
+    return out
+
+
 def _previous_mops() -> dict[str, list[dict]]:
     try:
         j = json.loads((config.DOCS / "analysts.json").read_text(encoding="utf-8"))
@@ -397,6 +484,14 @@ def build(stock_id: str, name: str, close: float | None, market: str, today: dat
             "consensus": cons, "adr": adr, "summary": summarize(views, close)}
 
 
+def _safe_call(fn, what: str):
+    try:
+        return fn()
+    except Exception as e:  # noqa: BLE001
+        log.warning("%s 失敗：%s", what, e)
+        return None
+
+
 def _from_data_json() -> dict[str, dict]:
     try:
         j = json.loads((config.DOCS / "data.json").read_text(encoding="utf-8"))
@@ -428,6 +523,8 @@ def main(argv=None) -> int:
             item = build(sid, name, k.get("close"), market, now.date(), k.get("etf"), k.get("dividends"))
             item["mops"] = merge_mops(prev.get(sid, []), fresh.get(sid, []), now.date())
             item["mops_links"] = mops_links(sid)
+            if sid in ADR:
+                item["sec"] = _safe_call(lambda: sec_filings(ADR[sid], now.date()), f"{sid} SEC EDGAR")
             out.append(item)
         except Exception as e:  # noqa: BLE001
             log.exception("%s 失敗：%s", sid, e)
