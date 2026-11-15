@@ -29,6 +29,7 @@ class Stock:
 class Settings:
     stocks: list[Stock] = field(default_factory=list)
     signal_notify: bool = True      # 盤後是否推播「今天出現的買賣訊號」
+    analyst_extra: list[str] = field(default_factory=list)  # 不設提醒、只想在「分析師觀點」看的股票
 
 
 def _num(v):
@@ -59,7 +60,8 @@ def load(path: Path = WATCHLIST) -> Settings:
             next_ex=str(item.get("next_ex") or ""),
             next_dps=_num(item.get("next_dps")),
         ))
-    return Settings(stocks=stocks, signal_notify=bool(raw.get("signal_notify", True)))
+    extra = [str(x).strip() for x in raw.get("analyst_extra") or [] if str(x).strip()]
+    return Settings(stocks=stocks, signal_notify=bool(raw.get("signal_notify", True)), analyst_extra=extra)
 
 
 def load_state(path: Path = STATE) -> dict:

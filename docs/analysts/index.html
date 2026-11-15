@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="referrer" content="no-referrer">
+<title>分析師觀點</title>
+<style>
+:root{
+  --bg:#f6f7f9;--card:#fff;--ink:#16181d;--muted:#6b7280;--line:#e5e7eb;
+  --up:#d6283b;--down:#10893e;--flat:#6b7280;--accent:#2f6fde;--chip:#f1f3f6;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0f1115;--card:#181b21;--ink:#eceef2;--muted:#9aa1ad;--line:#2a2e37;
+    --up:#ff5a6a;--down:#2fbf6a;--flat:#9aa1ad;--accent:#6c9cff;--chip:#232731;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.5 -apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  -webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);font-size:12px;margin-top:2px}
+.tabs{display:flex;gap:6px;margin-top:10px;overflow-x:auto}
+.tab{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:5px 12px;font-size:13px;white-space:nowrap}
+.tab.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+main{padding:12px 16px 40px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:10px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer}
+.nm{flex:1;min-width:0}
+.nm b{font-size:16px}
+.nm .id{color:var(--muted);font-size:12px;margin-left:6px}
+.nm .meta{color:var(--muted);font-size:12px}
+.px{text-align:right;font-variant-numeric:tabular-nums}
+.px .p{font-size:17px;font-weight:600}
+.px .c{font-size:13px}
+.up{color:var(--up)}.down{color:var(--down)}.flat{color:var(--flat)}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.b-bull{background:color-mix(in srgb,var(--up) 15%,transparent);color:var(--up)}
+.b-bear{background:color-mix(in srgb,var(--down) 15%,transparent);color:var(--down)}
+.b-neu{background:var(--chip);color:var(--muted)}
+.detail{display:none;border-top:1px solid var(--line);padding:12px 14px}
+.card.open .detail{display:block}
+.sec{margin-bottom:14px}
+.sec h3{font-size:13px;color:var(--muted);margin:0 0 6px;font-weight:600}
+ul{margin:0;padding-left:18px}
+li{margin:2px 0}
+.ev{font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.kv{background:var(--chip);border-radius:8px;padding:6px 8px}
+.kv span{display:block;color:var(--muted);font-size:11px}
+.kv b{font-variant-numeric:tabular-nums}
+svg{display:block;width:100%;height:auto}
+.legend{font-size:11px;color:var(--muted);display:flex;gap:10px;margin-top:2px;white-space:nowrap}
+.legend i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:3px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+td,th{padding:4px 2px;text-align:right;border-bottom:1px solid var(--line)}
+td:first-child,th:first-child{text-align:left}
+th{color:var(--muted);font-weight:500}
+.empty{color:var(--muted);text-align:center;padding:40px 0}
+.foot{color:var(--muted);font-size:12px;text-align:center;margin-top:18px}
+a{color:var(--accent)}
+.live{font-size:11px;color:var(--muted)}
+.pf{padding:14px}
+.pf h2{font-size:15px;margin:0 0 8px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.kpis .kv b{font-size:16px}
+.wbar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:8px 0 4px;background:var(--chip)}
+.wbar span{display:block;height:100%}
+.hold td:nth-child(n+2){white-space:nowrap}
+.warn{color:#b7791f;font-size:13px;margin-top:6px}
+
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--muted);margin-right:4px;white-space:nowrap}
+.news li{margin:6px 0;list-style:none}
+.news{padding-left:0}
+.news a{text-decoration:none}
+.news .m{color:var(--muted);font-size:12px}
+.rec{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:6px 0 2px;background:var(--chip)}
+.rec span{display:block;height:100%}
+.note{padding:12px 14px;border-top:1px solid var(--line)}
+.note:first-child{border-top:0}
+.note p{margin:4px 0 0;white-space:pre-wrap;font-size:14px}
+.back{color:var(--muted);font-size:13px;text-decoration:none}
+.hint{color:var(--muted);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="../">‹ 我的台股</a>
+  <h1>分析師觀點</h1>
+  <div class="sub" id="upd">載入中…</div>
+  <div class="tabs" id="tabs">
+    <button class="tab on" data-f="all">全部</button>
+    <button class="tab" data-f="stock">個股</button>
+    <button class="tab" data-f="etf">ETF</button>
+    <button class="tab" data-f="notes">收藏觀點</button>
+  </div>
+</header>
+<main>
+  <div id="list"><div class="empty">載入中…</div></div>
+  <div class="foot">
+    <a id="editn" href="#">✏️ 新增收藏觀點</a> · <a href="../">回自選股</a><br>
+    共識來自 Yahoo Finance；新聞標題來自 Google 新聞與 FinMind，版權屬原媒體，請點連結看全文<br>
+    目標價、偏多偏空是從標題自動判讀，可能有誤 · 非投資建議
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let DATA = null, FILTER = "all";
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function num(v, d){ return v == null ? "—" : Number(v).toLocaleString("zh-TW", {maximumFractionDigits: d ?? 2}); }
+function pct(v, d){ return v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d ?? 1) + "%"; }
+function cls(v){ return v == null ? "flat" : v > 0 ? "up" : v < 0 ? "down" : "flat"; }
+function url(u){ return /^https?:\/\//.test(u || "") ? esc(u) : ""; }
+const ST = {bull: ["偏多", "b-bull"], bear: ["偏空", "b-bear"], neutral: ["中性", "b-neu"]};
+function stance(s){ const x = ST[s]; return x ? `<span class="badge ${x[1]}" style="font-size:11px;padding:1px 7px">${x[0]}</span>` : ""; }
+
+function badge(s){
+  if (s.etf){ const y = s.yields;
+    return y && y.recent_pct != null ? `<span class="badge b-neu">近 ${y.freq} 次 ${y.recent_pct.toFixed(1)}%</span>` : `<span class="badge b-neu">ETF</span>`; }
+  const c = s.consensus, m = s.summary || {};
+  if (c && c.mean) return `<span class="badge ${c.upside_pct > 0 ? "b-bull" : "b-bear"}">共識 ${num(c.mean, 0)}${c.upside_pct != null ? " · " + pct(c.upside_pct) : ""}</span>`;
+  if (m.median_target) return `<span class="badge ${m.upside_pct > 0 ? "b-bull" : "b-bear"}">目標價 ${num(m.median_target, 0)}${m.upside_pct != null ? " · " + pct(m.upside_pct) : ""}</span>`;
+  return `<span class="badge b-neu">${(s.views || []).length} 則觀點</span>`;
+}
+
+function consensus(c, title){
+  if (!c) return "";
+  const cur = c.currency === "USD" ? " 美元" : "";
+  let h = `<div class="sec"><h3>${esc(title)}</h3><div class="grid">
+    <div class="kv"><span>分析師</span><b>${c.n ?? "—"} 位</b></div>
+    <div class="kv"><span>平均目標價${cur}</span><b>${num(c.mean, 1)}</b></div>
+    <div class="kv"><span>距現價</span><b class="${cls(c.upside_pct)}">${pct(c.upside_pct)}</b></div>
+    <div class="kv"><span>最高</span><b>${num(c.high, 1)}</b></div>
+    <div class="kv"><span>最低</span><b>${num(c.low, 1)}</b></div>
+    <div class="kv"><span>整體評等</span><b>${esc(c.key || "—")}</b></div></div>`;
+  const r = c.rec;
+  if (r){ const tot = r.strongBuy + r.buy + r.hold + r.sell + r.strongSell;
+    if (tot){ const seg = [[r.strongBuy + r.buy, "var(--up)"], [r.hold, "var(--flat)"], [r.sell + r.strongSell, "var(--down)"]];
+      h += `<div class="rec">${seg.map(([v, col]) => v ? `<span style="width:${v / tot * 100}%;background:${col}"></span>` : "").join("")}</div>
+      <div class="legend"><span>買進 ${r.strongBuy + r.buy}</span><span>持有 ${r.hold}</span><span>賣出 ${r.sell + r.strongSell}</span></div>`; } }
+  if (c.changes && c.changes.length){
+    h += `<table style="margin-top:8px"><tr><th>日期</th><th>機構</th><th>評等</th></tr>${c.changes.slice(0, 6).map(x =>
+      `<tr><td>${esc(x.date.slice(5))}</td><td>${esc(x.firm)}</td><td>${esc(x.action)} ${x.from && x.from !== x.to ? esc(x.from) + "→" : ""}${esc(x.to)}</td></tr>`).join("")}</table>`; }
+  return h + `</div>`;
+}
+
+function targets(s){
+  const seen = new Set(), rows = [];
+  for (const v of s.views || []) { if (!v.target) continue; const k = v.broker || v.title; if (seen.has(k)) continue; seen.add(k); rows.push(v); }
+  if (!rows.length) return "";
+  const m = s.summary || {};
+  return `<div class="sec"><h3>新聞中的券商目標價（同一家只取最新）</h3>
+    <table><tr><th>券商</th><th>目標價</th><th>距現價</th><th>日期</th></tr>${rows.map(v => {
+      const up = s.close ? (v.target / s.close - 1) * 100 : null;
+      return `<tr><td>${esc(v.broker || "未標明")} ${stance(v.stance)}</td><td>${num(v.target, 1)}</td><td class="${cls(up)}">${pct(up)}</td><td>${esc((v.date || "").slice(5))}</td></tr>`; }).join("")}</table>
+    ${m.median_target ? `<div class="hint">中位數 ${num(m.median_target, 1)} 元（${rows.length} 家），現價 ${num(s.close, 2)}</div>` : ""}</div>`;
+}
+
+function yields(y){
+  if (!y) return "";
+  return `<div class="sec"><h3>殖利率兩種算法</h3><div class="grid">
+    <div class="kv"><span>${y.is_next ? "這次" : "最近一次"}配息</span><b>${num(y.dps, 3)} 元</b></div>
+    <div class="kv"><span>單次配息率</span><b>${y.single_pct == null ? "—" : y.single_pct.toFixed(2) + "%"}</b></div>
+    <div class="kv"><span>× ${y.freq} 年化</span><b>${y.annualized_pct == null ? "—" : y.annualized_pct.toFixed(2) + "%"}</b></div>
+    <div class="kv"><span>近 ${y.freq} 次合計${y.recent_incl_next ? "（含這次）" : ""}</span><b>${num(y.recent_dps, 3)} 元</b></div>
+    <div class="kv"><span>近 ${y.freq} 次殖利率</span><b>${y.recent_pct == null ? "—" : y.recent_pct.toFixed(2) + "%"}</b></div>
+    <div class="kv"><span>差距（百分點）</span><b>${y.gap_pct == null ? "—" : (y.gap_pct > 0 ? "+" : "") + y.gap_pct.toFixed(2)}</b></div></div>
+    <div class="hint">年化的前提是之後每次都配一樣多，但配息會隨績效調整。編生活預算建議用「近幾次實際合計」，買不買再看含息總報酬。</div></div>`;
+}
+
+function views(list, etf){
+  if (!list || !list.length) return `<div class="sec"><h3>${etf ? "相關新聞" : "分析師 / 法人觀點"}</h3><div class="live">近 60 天沒有找到相關報導</div></div>`;
+  return `<div class="sec"><h3>${etf ? "相關新聞" : "分析師 / 法人觀點"}（近 60 天）</h3><ul class="news">${list.map(v => {
+    const u = url(v.link);
+    const t = u ? `<a href="${u}" target="_blank" rel="noopener noreferrer">${esc(v.title)}</a>` : esc(v.title);
+    return `<li>${etf ? "" : stance(v.stance)}${t}<div class="m">${esc(v.date)} · ${esc(v.source)}${v.broker ? " · " + esc(v.broker) : ""}${v.target ? " · 目標價 " + num(v.target, 1) : ""}</div></li>`; }).join("")}</ul></div>`;
+}
+
+function noteHtml(n, showStock){
+  const u = url(n.link);
+  return `<div class="note"><b>${stance(n.stance)}${esc(n.title || "（無標題）")}</b>
+    <div class="m live">${showStock && n.stock ? esc(n.stock) + " · " : ""}${esc(n.author)}${n.date ? " · " + esc(n.date) : ""}${u ? ` · <a href="${u}" target="_blank" rel="noopener noreferrer">原文</a>` : ""}</div>
+    ${n.summary ? `<p>${esc(n.summary)}</p>` : ""}</div>`;
+}
+
+function render(){
+  const notes = DATA.notes || [];
+  if (FILTER === "notes"){
+    $("#list").innerHTML = notes.length ? `<div class="card">${notes.map(n => noteHtml(n, true)).join("")}</div>`
+      : `<div class="empty">還沒有收藏觀點，按下面「新增收藏觀點」編輯 analyst_notes.yml。</div>`; return; }
+  const list = (DATA.stocks || []).filter(s => FILTER === "all" || (FILTER === "etf") === !!s.etf);
+  if (!list.length){ $("#list").innerHTML = `<div class="empty">沒有符合的股票</div>`; return; }
+  $("#list").innerHTML = list.map(s => {
+    const mine = notes.filter(n => n.stock === s.id);
+    return `<div class="card"><div class="row"><div class="nm"><b>${esc(s.name)}</b><span class="id">${esc(s.id)}</span>
+      <div class="meta">${s.etf ? "ETF" : `偏多 ${s.summary?.bull ?? 0} · 偏空 ${s.summary?.bear ?? 0} · 中性 ${s.summary?.neutral ?? 0}`}${mine.length ? ` · 收藏 ${mine.length}` : ""}</div></div>
+      <div class="px"><div class="p">${num(s.close, 2)}</div>${badge(s)}</div></div>
+      <div class="detail">
+        ${s.etf ? yields(s.yields) : consensus(s.consensus, "市場共識（Yahoo Finance）") + consensus(s.adr, `美國 ADR ${s.adr ? s.adr.symbol : ""} 分析師共識`) + targets(s)}
+        ${mine.length ? `<div class="sec"><h3>我的收藏觀點</h3><div class="card" style="margin:0">${mine.map(n => noteHtml(n)).join("")}</div></div>` : ""}
+        ${views(s.views, s.etf)}
+      </div></div>`; }).join("");
+}
+
+$("#list").addEventListener("click", e => { const row = e.target.closest(".row"); if (row) row.parentElement.classList.toggle("open"); });
+$("#tabs").addEventListener("click", e => { const b = e.target.closest(".tab"); if (!b) return;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t === b)); FILTER = b.dataset.f; render(); });
+(() => { const m = location.hostname.match(/^([^.]+)\.github\.io$/), repo = location.pathname.split("/").filter(Boolean)[0];
+  $("#editn").href = m && repo ? `https://github.com/${m[1]}/${repo}/edit/main/analyst_notes.yml` : "../../analyst_notes.yml"; })();
+
+(async () => {
+  try { DATA = await (await fetch("../analysts.json?t=" + Date.now())).json(); }
+  catch { $("#list").innerHTML = `<div class="empty">還沒有資料，等下一次盤後更新完成就會出現。</div>`; $("#upd").textContent = ""; return; }
+  $("#upd").textContent = `更新於 ${DATA.updated_at} · 點股票展開`;
+  render();
+})();
+</script>
+</body>
+</html>
