@@ -102,7 +102,7 @@ a{color:var(--accent)}
   <div class="foot">
     <a id="editn" href="#">✏️ 新增收藏觀點</a> · <a href="../">回自選股</a><br>
     共識來自 Yahoo Finance；新聞標題來自 Google 新聞與 FinMind，版權屬原媒體，請點連結看全文<br>
-    重大訊息來自證交所 / 櫃買中心開放資料（公開資訊觀測站），以觀測站原文為準<br>
+    重大訊息來自證交所 / 櫃買中心開放資料（公開資訊觀測站），以觀測站原文為準；美國申報來自 SEC EDGAR<br>
     目標價、偏多偏空是從標題自動判讀，可能有誤 · 非投資建議
   </div>
 </main>
@@ -192,6 +192,21 @@ function mops(s){
     ${links ? `<div class="hint">${links}</div>` : ""}</div>`;
 }
 
+function sec(s){
+  const x = s.sec; if (!x) return "";
+  const L = x.links || {};
+  const items = (x.filings || []).slice(0, 8).map(f => {
+    const u = url(f.link), t = esc(f.title || f.form_zh || f.form);
+    return `<li><span class="chip">${esc(f.form)}</span>${u ? `<a href="${u}" target="_blank" rel="noopener noreferrer">${t}</a>` : t}
+      <div class="m">${esc(f.date)}${f.form_zh && f.title ? " · " + esc(f.form_zh) : ""}</div></li>`; }).join("");
+  const links = [["EDGAR 搜尋", L.search], ["公司申報總覽", L.company]].filter(y => url(y[1]))
+    .map(([t, u]) => `<a href="${url(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`).join(" · ");
+  return `<div class="sec"><h3>美國 SEC 申報（ADR ${esc(x.symbol)}，近 90 天）</h3>
+    ${items ? `<ul class="news">${items}</ul>` : `<div class="live">近 90 天沒有新申報</div>`}
+    ${x.insider ? `<div class="hint">另有內部人持股申報（Form 4 等）${x.insider} 筆</div>` : ""}
+    ${links ? `<div class="hint">${links}</div>` : ""}</div>`;
+}
+
 function noteHtml(n, showStock){
   const u = url(n.link);
   return `<div class="note"><b>${stance(n.stance)}${esc(n.title || "（無標題）")}</b>
@@ -215,6 +230,7 @@ function render(){
         ${s.etf ? yields(s.yields) : consensus(s.consensus, "市場共識（Yahoo Finance）") + consensus(s.adr, `美國 ADR ${s.adr ? s.adr.symbol : ""} 分析師共識`) + targets(s)}
         ${mine.length ? `<div class="sec"><h3>我的收藏觀點</h3><div class="card" style="margin:0">${mine.map(n => noteHtml(n)).join("")}</div></div>` : ""}
         ${mops(s)}
+        ${sec(s)}
         ${views(s.views, s.etf)}
       </div></div>`; }).join("");
 }

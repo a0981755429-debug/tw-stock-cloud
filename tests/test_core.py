@@ -476,6 +476,7 @@ def test_analysts_main(monkeypatch, tmp_path):
     monkeypatch.setattr(analysts, "google_news", lambda q: analysts.parse_rss(_RSS))
     monkeypatch.setattr(analysts, "consensus", lambda syms: None)
     monkeypatch.setattr(analysts, "mops_today", lambda: analysts.parse_mops(_MOPS))
+    monkeypatch.setattr(analysts, "sec_filings", lambda sym, today: None)
     from datetime import datetime as _dt
     monkeypatch.setattr(analysts, "datetime", type("DT", (), {"now": staticmethod(lambda tz=None: _dt(2026, 11, 15, 18, tzinfo=tz))}))
     assert analysts.main([]) == 0
@@ -501,3 +502,21 @@ def test_mops_parse_and_merge():
     old = [dict(a), {"date": "2026-01-01", "time": "09:00", "subject": "太舊"}]
     merged = analysts.merge_mops(old, m["2317"], _date(2026, 11, 15))
     assert len(merged) == 1
+
+
+def test_sec_parse_and_title(monkeypatch):
+    j = {"cik": "0001046179", "name": "TAIWAN SEMICONDUCTOR", "filings": {"recent": {
+        "filingDate": ["2026-11-13", "2026-11-10", "2026-11-10", "2026-01-01"],
+        "form": ["6-K", "4", "20-F", "6-K"],
+        "accessionNumber": ["0001046179-26-000801", "x", "0001046179-26-000700", "y"],
+        "primaryDocument": ["tsm-revenue.htm", "f4.xml", "tsm-20f.htm", "old.htm"],
+        "primaryDocDescription": ["6-K", "FORM 4", "ANNUAL REPORT", "6-K"]}}}
+    out = analysts.parse_sec(j, _date(2026, 11, 15))
+    assert out["insider"] == 1 and [f["form"] for f in out["filings"]] == ["6-K", "20-F"]
+    assert out["filings"][0]["link"] == "https://www.sec.gov/Archives/edgar/data/1046179/000104617926000801/tsm-revenue.htm"
+    assert out["filings"][0]["title"] == "" and out["filings"][1]["title"] == "ANNUAL REPORT"
+    html = ("<html><p>FORM 6-K</p><p>SECURITIES AND EXCHANGE COMMISSION</p><p>Taiwan Semiconductor Manufacturing Company Ltd.</p>"
+            "<p><b>TSMC Reports October 2026 Revenue</b></p><p>Hsinchu, Taiwan ...</p></html>")
+    monkeypatch.setattr(analysts, "_sec_get", lambda url: type("R", (), {"text": html})())
+    assert analysts.sec_title("https://x") == "TSMC Reports October 2026 Revenue"
+    assert analysts.sec_filings("2317", _date(2026, 11, 15)) is None
