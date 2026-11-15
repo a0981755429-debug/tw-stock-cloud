@@ -417,3 +417,58 @@ def test_broker_merge_and_disabled(monkeypatch):
     assert broker.sync(manual) == (manual, [])
     monkeypatch.setenv("HOLDINGS", "holdings: []\nexclude: ['6666', 5555]")
     assert broker.excluded() == {"6666", "5555"}
+
+
+# ---------------------------------------------------------------- 分析師觀點
+from stockapp import analysts  # noqa: E402
+
+_RSS = """<?xml version="1.0"?><rss><channel>
+<item><title>大摩喊鴻海目標價從250調升至320元 - 經濟日報</title><link>https://example.com/a</link>
+<pubDate>Fri, 13 Nov 2026 02:00:00 GMT</pubDate><source url="https://money.udn.com">經濟日報</source></item>
+<item><title>高盛調降鴻海評等至中立 目標價210 - 鉅亨網</title><link>https://example.com/b</link>
+<pubDate>Thu, 12 Nov 2026 02:00:00 GMT</pubDate><source url="https://cnyes.com">鉅亨網</source></item>
+<item><title>鴻海舉辦科技日 - 自由時報</title><link>https://example.com/c</link>
+<pubDate>Thu, 12 Nov 2026 01:00:00 GMT</pubDate><source url="https://ltn.com.tw">自由時報</source></item>
+</channel></rss>"""
+
+
+def test_analyst_title_parsing():
+    assert analysts.target_of("大摩喊鴻海目標價從250調升至320元") == 320
+    assert analysts.target_of("小摩：台積電目標價上看1,500元, 維持加碼") == 1500
+    assert analysts.target_of("鴻海法說會") is None
+    assert analysts.broker_of("大摩喊鴻海") == "摩根士丹利"
+    assert analysts.stance_of("外資調升評等至買進") == "bull"
+    assert analysts.stance_of("高盛調降評等") == "bear"
+    items = analysts.parse_rss(_RSS)
+    v = analysts.parse_view(items[0]["title"], items[0]["link"], items[0]["source"], items[0]["date"])
+    assert v["title"].endswith("320元") and v["source"] == "經濟日報" and v["date"] == "2026-11-13"
+
+
+def test_etf_yields_matches_manual_math():
+    y = analysts.etf_yields({"next_dps": 1.25, "count": 4, "ttm_dps": 3.34}, 33.6)
+    assert y["single_pct"] == 3.72 and y["annualized_pct"] == 14.88 and y["ttm_pct"] == 9.94
+    assert analysts.etf_yields(None, 33.6) is None
+
+
+def test_repo_analyst_notes_valid():
+    notes = analysts.load_notes()
+    assert all(n["title"] or n["summary"] for n in notes)
+
+
+def test_analysts_main(monkeypatch, tmp_path):
+    (tmp_path / "data.json").write_text(json.dumps({"stocks": [
+        {"id": "2317", "name": "鴻海", "market": "上市", "close": 250, "signal": {}},
+        {"id": "00878", "name": "國泰永續高股息", "market": "上市", "close": 33.6,
+         "signal": {"etf": {"next_dps": 1.25, "count": 4, "ttm_dps": 3.34}}}]}), encoding="utf-8")
+    monkeypatch.setattr(config, "DOCS", tmp_path)
+    monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2317"), config.Stock("00878")]))
+    monkeypatch.setattr(analysts, "google_news", lambda q: analysts.parse_rss(_RSS))
+    monkeypatch.setattr(analysts, "consensus", lambda syms: None)
+    from datetime import datetime as _dt
+    monkeypatch.setattr(analysts, "datetime", type("DT", (), {"now": staticmethod(lambda tz=None: _dt(2026, 11, 15, 18, tzinfo=tz))}))
+    assert analysts.main([]) == 0
+    out = json.loads((tmp_path / "analysts.json").read_text(encoding="utf-8"))
+    hon, etf = out["stocks"]
+    assert len(hon["views"]) == 2 and hon["summary"]["median_target"] == 265 and hon["summary"]["targets"] == 2
+    assert etf["etf"] and etf["yields"]["annualized_pct"] == 14.88
+    assert any(n["stock"] == "00878" for n in out["notes"])
