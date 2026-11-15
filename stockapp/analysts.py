@@ -7,6 +7,8 @@
   自動抓出券商名稱、目標價、偏多 / 偏空
 - ETF 沒有分析師評等，改列配息、成分股調整等相關新聞，並並排「這次配息 × 4 年化」與「近一年實際」殖利率
 - 收藏觀點：analyst_notes.yml（自己貼作者、摘要、連結）
+- 公開資訊觀測站重大訊息：證交所 / 櫃買中心 OpenAPI（官方開放資料，每天一次，不爬 MOPS 網頁），
+  每天累積進 analysts.json、保留近 MOPS_KEEP_DAYS 天；每檔另附 MOPS 公司總覽 / 重大訊息連結
 
 本機測試：python -m stockapp.analysts
 """
@@ -32,6 +34,12 @@ TPE = timezone(timedelta(hours=8))
 GNEWS = "https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
 ADR = {"2330": "TSM", "2303": "UMC", "3711": "ASX"}
 LOOKBACK_DAYS = 60
+MOPS_KEEP_DAYS = 90
+MOPS_OPENAPI = [
+    "https://openapi.twse.com.tw/v1/opendata/t187ap04_L",     # 上市公司每日重大訊息
+    "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap04_O",  # 上櫃公司每日重大訊息
+]
+MOPS_BASE = "https://mopsov.twse.com.tw/mops/web/"
 
 # 越具體的放越前面（「摩根士丹利」要比「摩根」先比對到）
 BROKERS = [
@@ -164,6 +172,78 @@ def collect_news(stock_id: str, name: str, etf: bool, today: date) -> list[dict]
         seen.add(key)
         out.append(n)
     return out
+
+
+# ---------------------------------------------------------------- 公開資訊觀測站
+def mops_links(stock_id: str) -> dict:
+    q = f"?encodeURIComponent=1&step=1&firstin=1&off=1&queryName=co_id&inpuType=co_id&TYPEK=all&co_id={stock_id}"
+    return {"index": MOPS_BASE + "index", "profile": MOPS_BASE + "t146sb05" + q,
+            "news": MOPS_BASE + "t05st01" + q}
+
+
+def _roc_date(s: str) -> str:
+    """民國 1151114 → 2026-11-14。"""
+    s = re.sub(r"\D", "", str(s or ""))
+    if len(s) < 7:
+        return ""
+    return f"{int(s[:-4]) + 1911}-{s[-4:-2]}-{s[-2:]}"
+
+
+def _field(row: dict, *names: str) -> str:
+    for k, v in row.items():
+        if k.strip() in names:
+            return str(v or "")
+    return ""
+
+
+def parse_mops(rows: list[dict]) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        sid = _field(r, "公司代號", "SecuritiesCompanyCode").strip()
+        subj = re.sub(r"\s+", " ", _field(r, "主旨")).strip()
+        if not sid or not subj:
+            continue
+        t = re.sub(r"\D", "", _field(r, "發言時間")).zfill(6)
+        desc = re.sub(r"[ \t]+", " ", _field(r, "說明").replace("\r", "")).strip()
+        out.setdefault(sid, []).append({
+            "date": _roc_date(_field(r, "發言日期")), "time": f"{t[:2]}:{t[2:4]}",
+            "subject": subj, "clause": _field(r, "符合條款").strip(),
+            "fact_date": _roc_date(_field(r, "事實發生日")),
+            "desc": desc[:400] + ("…" if len(desc) > 400 else "")})
+    return out
+
+
+def mops_today() -> dict[str, list[dict]]:
+    rows: list[dict] = []
+    for url in MOPS_OPENAPI:
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (tw-stock-cloud personal dashboard)"}, timeout=30)
+            r.raise_for_status()
+            rows += r.json() or []
+        except Exception as e:  # noqa: BLE001
+            log.warning("重大訊息 %s 失敗：%s", url, e)
+    return parse_mops(rows)
+
+
+def merge_mops(old: list[dict], new: list[dict], today: date) -> list[dict]:
+    """把今天抓到的跟上次存的合併：去重、新到舊、只留近 MOPS_KEEP_DAYS 天、最多 30 則。"""
+    since = (today - timedelta(days=MOPS_KEEP_DAYS)).isoformat()
+    seen, out = set(), []
+    for m in sorted(old + new, key=lambda x: (x.get("date", ""), x.get("time", "")), reverse=True):
+        k = (m.get("date"), m.get("time"), m.get("subject"))
+        if k in seen or (m.get("date") or "") < since:
+            continue
+        seen.add(k)
+        out.append(m)
+    return out[:30]
+
+
+def _previous_mops() -> dict[str, list[dict]]:
+    try:
+        j = json.loads((config.DOCS / "analysts.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return {}
+    return {s["id"]: s.get("mops") or [] for s in j.get("stocks") or []}
 
 
 # ---------------------------------------------------------------- Yahoo 共識
@@ -336,6 +416,8 @@ def main(argv=None) -> int:
     known = _from_data_json()
     info = data.stock_info() if any(i not in known for i in ids) else {}
     now = datetime.now(TPE)
+    prev, fresh = _previous_mops(), mops_today()
+    log.info("重大訊息：今天 %d 家公司有公告", len(fresh))
     out = []
     for sid in ids:
         k = known.get(sid) or {}
@@ -343,7 +425,10 @@ def main(argv=None) -> int:
         market = k.get("market") or info.get(sid, {}).get("market", "twse")
         log.info("分析師觀點 %s %s", sid, name)
         try:
-            out.append(build(sid, name, k.get("close"), market, now.date(), k.get("etf"), k.get("dividends")))
+            item = build(sid, name, k.get("close"), market, now.date(), k.get("etf"), k.get("dividends"))
+            item["mops"] = merge_mops(prev.get(sid, []), fresh.get(sid, []), now.date())
+            item["mops_links"] = mops_links(sid)
+            out.append(item)
         except Exception as e:  # noqa: BLE001
             log.exception("%s 失敗：%s", sid, e)
     config.DOCS.mkdir(exist_ok=True)
