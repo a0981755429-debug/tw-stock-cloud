@@ -1,0 +1,26 @@
+name: 暫時：MOPS 來源測試
+on:
+  push:
+    branches: [claude/project-thread-djaohg]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          UA="Mozilla/5.0 (tw-stock-cloud personal dashboard)"
+          p(){ echo "=== $1"; curl -sS -m 25 -A "$UA" -o /tmp/o -w "HTTP %{http_code} %{content_type} %{size_download}B\n" "$1"; head -c 700 /tmp/o | tr '\n' ' '; echo; }
+          p "https://openapi.twse.com.tw/v1/opendata/t187ap04_L"
+          p "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap04_O"
+          p "https://openapi.twse.com.tw/v1/opendata/t187ap46_L_1"
+          p "https://mopsov.twse.com.tw/mops/web/index"
+          p "https://mopsov.twse.com.tw/mops/web/t146sb05?encodeURIComponent=1&step=1&firstin=1&off=1&queryName=co_id&inpuType=co_id&TYPEK=all&co_id=2317"
+          p "https://mopsov.twse.com.tw/mops/web/t05st01?encodeURIComponent=1&step=1&firstin=1&off=1&queryName=co_id&inpuType=co_id&TYPEK=all&co_id=2317"
+          p "https://mops.twse.com.tw/mops/#/web/t146sb05?companyId=2317"
+          echo "=== POST t05st01 (近期重大訊息)"
+          curl -sS -m 25 -A "$UA" -e "https://mopsov.twse.com.tw/mops/web/t05st01" -X POST \
+            -d "encodeURIComponent=1&step=1&firstin=1&off=1&queryName=co_id&inpuType=co_id&TYPEK=all&co_id=2317&year=115&month=11" \
+            -o /tmp/o -w "HTTP %{http_code} %{size_download}B\n" "https://mopsov.twse.com.tw/mops/web/ajax_t05st01"
+          head -c 1500 /tmp/o | tr '\n' ' '; echo
+          echo "=== openapi 2317 rows"; curl -sS -m 25 "https://openapi.twse.com.tw/v1/opendata/t187ap04_L" | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d), d[0].keys() if d else None);print([r for r in d if r.get('公司代號')=='2317'][:2])"
