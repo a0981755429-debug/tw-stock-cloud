@@ -475,6 +475,7 @@ def test_analysts_main(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2317"), config.Stock("00878")]))
     monkeypatch.setattr(analysts, "google_news", lambda q: analysts.parse_rss(_RSS))
     monkeypatch.setattr(analysts, "consensus", lambda syms: None)
+    monkeypatch.setattr(analysts, "mops_today", lambda: analysts.parse_mops(_MOPS))
     from datetime import datetime as _dt
     monkeypatch.setattr(analysts, "datetime", type("DT", (), {"now": staticmethod(lambda tz=None: _dt(2026, 11, 15, 18, tzinfo=tz))}))
     assert analysts.main([]) == 0
@@ -483,3 +484,20 @@ def test_analysts_main(monkeypatch, tmp_path):
     assert len(hon["views"]) == 2 and hon["summary"]["median_target"] == 265 and hon["summary"]["targets"] == 2
     assert etf["etf"] and etf["yields"]["annualized_pct"] == 14.88 and etf["yields"]["recent_pct"] == 9.94
     assert any(n["stock"] == "00878" for n in out["notes"])
+    assert hon["mops"][0]["subject"] == "公告本公司董事會決議配發 現金股利" and "co_id=2317" in hon["mops_links"]["news"]
+    assert etf["mops"] == []
+
+
+_MOPS = [{"出表日期": "1151115", "發言日期": "1151114", "發言時間": "70003", "公司代號": "2317", "公司名稱": "鴻海",
+          "主旨 ": "公告本公司董事會決議配發\r\n現金股利", "符合條款": "第14款", "事實發生日": "1151114", "說明": "1.事實\r\n2.內容"}]
+
+
+def test_mops_parse_and_merge():
+    m = analysts.parse_mops(_MOPS + [{"Date": "1151115", "發言日期": "1151113", "發言時間": "163000",
+                                      "SecuritiesCompanyCode": "6488", "主旨": "法說會", "說明": ""}])
+    a = m["2317"][0]
+    assert a["date"] == "2026-11-14" and a["time"] == "07:00" and a["subject"] == "公告本公司董事會決議配發 現金股利"
+    assert m["6488"][0]["date"] == "2026-11-13" and m["6488"][0]["time"] == "16:30"
+    old = [dict(a), {"date": "2026-01-01", "time": "09:00", "subject": "太舊"}]
+    merged = analysts.merge_mops(old, m["2317"], _date(2026, 11, 15))
+    assert len(merged) == 1

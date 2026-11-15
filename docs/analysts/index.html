@@ -102,12 +102,14 @@ a{color:var(--accent)}
   <div class="foot">
     <a id="editn" href="#">✏️ 新增收藏觀點</a> · <a href="../">回自選股</a><br>
     共識來自 Yahoo Finance；新聞標題來自 Google 新聞與 FinMind，版權屬原媒體，請點連結看全文<br>
+    重大訊息來自證交所 / 櫃買中心開放資料（公開資訊觀測站），以觀測站原文為準<br>
     目標價、偏多偏空是從標題自動判讀，可能有誤 · 非投資建議
   </div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
 let DATA = null, FILTER = "all";
+const RECENT = new Date(Date.now() + 8 * 3600e3 - 3 * 86400e3).toISOString().slice(0, 10);  // 近 3 天的重訊標「新」
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function num(v, d){ return v == null ? "—" : Number(v).toLocaleString("zh-TW", {maximumFractionDigits: d ?? 2}); }
 function pct(v, d){ return v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d ?? 1) + "%"; }
@@ -178,6 +180,18 @@ function views(list, etf){
     return `<li>${etf ? "" : stance(v.stance)}${t}<div class="m">${esc(v.date)} · ${esc(v.source)}${v.broker ? " · " + esc(v.broker) : ""}${v.target ? " · 目標價 " + num(v.target, 1) : ""}</div></li>`; }).join("")}</ul></div>`;
 }
 
+function mops(s){
+  const L = s.mops_links || {}, list = s.mops || [];
+  const links = [["公司總覽", L.profile], ["重大訊息查詢", L.news], ["觀測站首頁", L.index]]
+    .filter(x => url(x[1])).map(([t, u]) => `<a href="${url(u)}" target="_blank" rel="noopener noreferrer">${t}</a>`).join(" · ");
+  const items = list.slice(0, 8).map(m => `<li><details><summary><b>${esc(m.subject)}</b></summary>
+      ${m.desc ? `<div class="live" style="white-space:pre-wrap;margin-top:4px">${esc(m.desc)}</div>` : ""}</details>
+      <div class="m">${esc(m.date)} ${esc(m.time)}${m.clause ? " · " + esc(m.clause) : ""}</div></li>`).join("");
+  return `<div class="sec"><h3>公開資訊觀測站（重大訊息，近 90 天）</h3>
+    ${items ? `<ul class="news">${items}</ul>` : `<div class="live">這段期間沒有收錄到重大訊息（每天盤後累積，剛開始會比較少）</div>`}
+    ${links ? `<div class="hint">${links}</div>` : ""}</div>`;
+}
+
 function noteHtml(n, showStock){
   const u = url(n.link);
   return `<div class="note"><b>${stance(n.stance)}${esc(n.title || "（無標題）")}</b>
@@ -195,11 +209,12 @@ function render(){
   $("#list").innerHTML = list.map(s => {
     const mine = notes.filter(n => n.stock === s.id);
     return `<div class="card"><div class="row"><div class="nm"><b>${esc(s.name)}</b><span class="id">${esc(s.id)}</span>
-      <div class="meta">${s.etf ? "ETF" : `偏多 ${s.summary?.bull ?? 0} · 偏空 ${s.summary?.bear ?? 0} · 中性 ${s.summary?.neutral ?? 0}`}${mine.length ? ` · 收藏 ${mine.length}` : ""}</div></div>
+      <div class="meta">${(s.mops || []).length && s.mops[0].date >= RECENT ? `<span class="chip" style="color:var(--accent)">新重訊</span>` : ""}${s.etf ? "ETF" : `偏多 ${s.summary?.bull ?? 0} · 偏空 ${s.summary?.bear ?? 0} · 中性 ${s.summary?.neutral ?? 0}`}${mine.length ? ` · 收藏 ${mine.length}` : ""}</div></div>
       <div class="px"><div class="p">${num(s.close, 2)}</div>${badge(s)}</div></div>
       <div class="detail">
         ${s.etf ? yields(s.yields) : consensus(s.consensus, "市場共識（Yahoo Finance）") + consensus(s.adr, `美國 ADR ${s.adr ? s.adr.symbol : ""} 分析師共識`) + targets(s)}
         ${mine.length ? `<div class="sec"><h3>我的收藏觀點</h3><div class="card" style="margin:0">${mine.map(n => noteHtml(n)).join("")}</div></div>` : ""}
+        ${mops(s)}
         ${views(s.views, s.etf)}
       </div></div>`; }).join("");
 }
