@@ -436,6 +436,10 @@ def test_analyst_title_parsing():
     assert analysts.target_of("大摩喊鴻海目標價從250調升至320元") == 320
     assert analysts.target_of("小摩：台積電目標價上看1,500元, 維持加碼") == 1500
     assert analysts.target_of("鴻海法說會") is None
+    assert analysts.target_of("法人最新目標價差卻逾3倍」2,350元進場") is None
+    assert analysts.target_of("鴻海目標價1表評》EPS達5.51元") is None
+    assert analysts.target_of("目標價喊3828元 外資挺台積電") == 3828
+    assert not analysts.mentions("大摩下修輝達目標價", "2317", "鴻海")
     assert analysts.broker_of("大摩喊鴻海") == "摩根士丹利"
     assert analysts.stance_of("外資調升評等至買進") == "bull"
     assert analysts.stance_of("高盛調降評等") == "bear"
@@ -444,9 +448,15 @@ def test_analyst_title_parsing():
     assert v["title"].endswith("320元") and v["source"] == "經濟日報" and v["date"] == "2026-11-13"
 
 
+_EV878 = [{"ex": "2025-11-18", "dps": 0.4}, {"ex": "2026-02-26", "dps": 0.42}, {"ex": "2026-05-19", "dps": 0.66},
+          {"ex": "2026-08-18", "dps": 1.01}, {"ex": "2026-11-17", "dps": 1.25}]
+
+
 def test_etf_yields_matches_manual_math():
-    y = analysts.etf_yields({"next_dps": 1.25, "count": 4, "ttm_dps": 3.34}, 33.6)
-    assert y["single_pct"] == 3.72 and y["annualized_pct"] == 14.88 and y["ttm_pct"] == 9.94
+    """老牛 00878 試算：1.25/33.6=3.72%、×4=14.88%；近四次 3.34 元 ≈ 9.94%。"""
+    y = analysts.etf_yields({"next_dps": 1.25, "count": 4, "ttm_dps": 2.49}, 33.6, _EV878, _date(2026, 11, 15))
+    assert y["single_pct"] == 3.72 and y["annualized_pct"] == 14.88
+    assert y["recent_dps"] == 3.34 and y["recent_pct"] == 9.94 and y["recent_incl_next"]
     assert analysts.etf_yields(None, 33.6) is None
 
 
@@ -459,7 +469,8 @@ def test_analysts_main(monkeypatch, tmp_path):
     (tmp_path / "data.json").write_text(json.dumps({"stocks": [
         {"id": "2317", "name": "鴻海", "market": "上市", "close": 250, "signal": {}},
         {"id": "00878", "name": "國泰永續高股息", "market": "上市", "close": 33.6,
-         "signal": {"etf": {"next_dps": 1.25, "count": 4, "ttm_dps": 3.34}}}]}), encoding="utf-8")
+         "signal": {"etf": {"next_dps": 1.25, "count": 4, "ttm_dps": 2.49}}, "dividends": _EV878}]}),
+        encoding="utf-8")
     monkeypatch.setattr(config, "DOCS", tmp_path)
     monkeypatch.setattr(config, "load", lambda: config.Settings([config.Stock("2317"), config.Stock("00878")]))
     monkeypatch.setattr(analysts, "google_news", lambda q: analysts.parse_rss(_RSS))
@@ -470,5 +481,5 @@ def test_analysts_main(monkeypatch, tmp_path):
     out = json.loads((tmp_path / "analysts.json").read_text(encoding="utf-8"))
     hon, etf = out["stocks"]
     assert len(hon["views"]) == 2 and hon["summary"]["median_target"] == 265 and hon["summary"]["targets"] == 2
-    assert etf["etf"] and etf["yields"]["annualized_pct"] == 14.88
+    assert etf["etf"] and etf["yields"]["annualized_pct"] == 14.88 and etf["yields"]["recent_pct"] == 9.94
     assert any(n["stock"] == "00878" for n in out["notes"])

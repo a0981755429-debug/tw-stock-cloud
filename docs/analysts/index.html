@@ -118,7 +118,7 @@ function stance(s){ const x = ST[s]; return x ? `<span class="badge ${x[1]}" sty
 
 function badge(s){
   if (s.etf){ const y = s.yields;
-    return y && y.ttm_pct != null ? `<span class="badge b-neu">近一年 ${y.ttm_pct.toFixed(1)}%</span>` : `<span class="badge b-neu">ETF</span>`; }
+    return y && y.recent_pct != null ? `<span class="badge b-neu">近 ${y.freq} 次 ${y.recent_pct.toFixed(1)}%</span>` : `<span class="badge b-neu">ETF</span>`; }
   const c = s.consensus, m = s.summary || {};
   if (c && c.mean) return `<span class="badge ${c.upside_pct > 0 ? "b-bull" : "b-bear"}">共識 ${num(c.mean, 0)}${c.upside_pct != null ? " · " + pct(c.upside_pct) : ""}</span>`;
   if (m.median_target) return `<span class="badge ${m.upside_pct > 0 ? "b-bull" : "b-bear"}">目標價 ${num(m.median_target, 0)}${m.upside_pct != null ? " · " + pct(m.upside_pct) : ""}</span>`;
@@ -164,10 +164,10 @@ function yields(y){
     <div class="kv"><span>${y.is_next ? "這次" : "最近一次"}配息</span><b>${num(y.dps, 3)} 元</b></div>
     <div class="kv"><span>單次配息率</span><b>${y.single_pct == null ? "—" : y.single_pct.toFixed(2) + "%"}</b></div>
     <div class="kv"><span>× ${y.freq} 年化</span><b>${y.annualized_pct == null ? "—" : y.annualized_pct.toFixed(2) + "%"}</b></div>
-    <div class="kv"><span>近一年實際配息</span><b>${num(y.ttm_dps, 3)} 元</b></div>
-    <div class="kv"><span>近一年殖利率</span><b>${y.ttm_pct == null ? "—" : y.ttm_pct.toFixed(2) + "%"}</b></div>
+    <div class="kv"><span>近 ${y.freq} 次合計${y.recent_incl_next ? "（含這次）" : ""}</span><b>${num(y.recent_dps, 3)} 元</b></div>
+    <div class="kv"><span>近 ${y.freq} 次殖利率</span><b>${y.recent_pct == null ? "—" : y.recent_pct.toFixed(2) + "%"}</b></div>
     <div class="kv"><span>差距（百分點）</span><b>${y.gap_pct == null ? "—" : (y.gap_pct > 0 ? "+" : "") + y.gap_pct.toFixed(2)}</b></div></div>
-    <div class="hint">年化的前提是之後每次都配一樣多，但配息會隨績效調整。編生活預算建議用「近一年實際」，買不買再看含息總報酬。</div></div>`;
+    <div class="hint">年化的前提是之後每次都配一樣多，但配息會隨績效調整。編生活預算建議用「近幾次實際合計」，買不買再看含息總報酬。</div></div>`;
 }
 
 function views(list, etf){

@@ -70,15 +70,16 @@ def target_of(title: str) -> float | None:
     i = title.find("目標價")
     if i < 0:
         return None
-    seg = re.split(r"[，。；;！!？?、|｜]|,(?!\d{3})", title[i + 3:i + 30])[0]
+    seg = re.split(r"[，。；;！!？?、|｜「」《》()（）]|,(?!\d{3})", title[i + 3:i + 24])[0]
     j = max(seg.rfind("至"), seg.rfind("到"))
     if j >= 0:
         seg = seg[j + 1:]
-    m = re.search(r"(\d{1,3}(?:,\d{3})+|\d{2,5})(?:\.\d+)?", seg)
+    # 數字要緊接在「目標價」後面幾個字內（喊、上看、調升至…），避免抓到後面無關的股價
+    m = re.match(r"\D{0,5}?(\d{1,3}(?:,\d{3})+|\d{2,5})(?:\.\d+)?(?!\d|倍|%|％|年|月|日|次|家|檔)", seg)
     if not m:
         return None
     try:
-        v = float(m.group(0).replace(",", ""))
+        v = float(m.group(1).replace(",", ""))
     except ValueError:
         return None
     return v if 5 <= v <= 20000 else None
@@ -88,6 +89,11 @@ def stance_of(title: str) -> str:
     b = sum(w in title for w in BULL)
     s = sum(w in title for w in BEAR)
     return "bull" if b > s else "bear" if s > b else "neutral"
+
+
+def mentions(title: str, stock_id: str, name: str) -> bool:
+    """標題要提到這檔（代號或名稱），避免「大摩下修輝達目標價」這種別檔的新聞混進來。"""
+    return stock_id in title or bool(name) and name in title
 
 
 def is_analyst_view(title: str) -> bool:
@@ -239,26 +245,32 @@ def summarize(views: list[dict], close: float | None) -> dict:
             "upside_pct": round((med / close - 1) * 100, 1) if med and close else None}
 
 
-def etf_yields(etf: dict | None, close: float | None) -> dict | None:
-    """「這次配息 × 一年配幾次」的年化 vs「近一年實際配息合計」的殖利率，並排比較。
+def etf_yields(etf: dict | None, close: float | None, events: list[dict] | None = None,
+               today: date | None = None) -> dict | None:
+    """「這次配息 × 一年配幾次」的年化 vs「近 N 次實際配息合計」的殖利率，並排比較。
 
-    年化的前提是接下來每次都配一樣多；配息會動態調整，編預算用近一年實際值比較保守。
+    年化的前提是接下來每次都配一樣多；配息會動態調整，編預算用近 N 次（含已公告這次）比較保守。
     """
     if not etf or not close:
         return None
     dps = etf.get("next_dps") or etf.get("last_dps")
-    freq = etf.get("count") or 4
+    freq = int(etf.get("count") or 4)
     ttm = etf.get("ttm_dps")
     if not dps and not ttm:
         return None
     single = dps / close * 100 if dps else None
+    ev = sorted((e for e in events or [] if e.get("dps")), key=lambda e: e["ex"])[-freq:]
+    recent = round(sum(e["dps"] for e in ev), 4) if len(ev) == freq else ttm
+    today_s = (today or date.today()).isoformat()
     out = {"dps": dps, "is_next": bool(etf.get("next_dps")), "freq": freq,
            "single_pct": round(single, 2) if single else None,
            "annualized_pct": round(single * freq, 2) if single else None,
+           "recent_dps": recent, "recent_pct": round(recent / close * 100, 2) if recent else None,
+           "recent_incl_next": bool(ev) and len(ev) == freq and ev[-1]["ex"] > today_s,
            "ttm_dps": ttm, "ttm_pct": round(ttm / close * 100, 2) if ttm else None,
            "next_ex": etf.get("next_ex")}
-    if out["annualized_pct"] and out["ttm_pct"]:
-        out["gap_pct"] = round(out["annualized_pct"] - out["ttm_pct"], 2)
+    if out["annualized_pct"] and out["recent_pct"]:
+        out["gap_pct"] = round(out["annualized_pct"] - out["recent_pct"], 2)
     return out
 
 
@@ -284,15 +296,16 @@ def load_notes(path=None) -> list[dict]:
 
 
 def build(stock_id: str, name: str, close: float | None, market: str, today: date,
-          etf_info: dict | None = None) -> dict:
+          etf_info: dict | None = None, div_events: list[dict] | None = None) -> dict:
     etf = data.is_etf(stock_id)
     news = collect_news(stock_id, name, etf, today)
     if etf:
-        views = [parse_view(n["title"], n["link"], n["source"], n["date"]) for n in news[:12]]
+        views = [parse_view(n["title"], n["link"], n["source"], n["date"])
+                 for n in news if mentions(n["title"], stock_id, name)][:12]
         return {"id": stock_id, "name": name, "etf": True, "close": close, "views": views,
-                "consensus": None, "adr": None, "summary": None, "yields": etf_yields(etf_info, close)}
+                "consensus": None, "adr": None, "summary": None, "yields": etf_yields(etf_info, close, div_events, today)}
     views = [parse_view(n["title"], n["link"], n["source"], n["date"])
-             for n in news if is_analyst_view(n["title"])][:20]
+             for n in news if is_analyst_view(n["title"]) and mentions(n["title"], stock_id, name)][:20]
     syms = [stock_id + s for s in ([".TWO", ".TW"] if market == "tpex" else [".TW", ".TWO"])]
     cons = consensus(syms)
     if cons and close and cons.get("mean"):
@@ -310,7 +323,7 @@ def _from_data_json() -> dict[str, dict]:
     except (FileNotFoundError, ValueError):
         return {}
     return {s["id"]: {"name": s.get("name"), "close": s.get("close"),
-                      "etf": (s.get("signal") or {}).get("etf"),
+                      "etf": (s.get("signal") or {}).get("etf"), "dividends": s.get("dividends") or [],
                       "market": "tpex" if s.get("market") == "上櫃" else "twse"} for s in j.get("stocks") or []}
 
 
@@ -330,7 +343,7 @@ def main(argv=None) -> int:
         market = k.get("market") or info.get(sid, {}).get("market", "twse")
         log.info("分析師觀點 %s %s", sid, name)
         try:
-            out.append(build(sid, name, k.get("close"), market, now.date(), k.get("etf")))
+            out.append(build(sid, name, k.get("close"), market, now.date(), k.get("etf"), k.get("dividends")))
         except Exception as e:  # noqa: BLE001
             log.exception("%s 失敗：%s", sid, e)
     config.DOCS.mkdir(exist_ok=True)
