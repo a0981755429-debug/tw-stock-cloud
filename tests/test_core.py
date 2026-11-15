@@ -519,4 +519,5 @@ def test_sec_parse_and_title(monkeypatch):
             "<p><b>TSMC Reports October 2026 Revenue</b></p><p>Hsinchu, Taiwan ...</p></html>")
     monkeypatch.setattr(analysts, "_sec_get", lambda url: type("R", (), {"text": html})())
     assert analysts.sec_title("https://x") == "TSMC Reports October 2026 Revenue"
+    assert out["filings"][0]["hint"] == "營收公告"
     assert analysts.sec_filings("2317", _date(2026, 11, 15)) is None

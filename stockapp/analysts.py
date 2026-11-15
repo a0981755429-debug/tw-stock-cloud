@@ -49,7 +49,12 @@ SEC_KEEP_DAYS = 90
 SEC_FORMS_ZH = {"6-K": "臨時報告", "20-F": "年報", "20-F/A": "年報更正", "10-K": "年報", "10-Q": "季報",
                 "8-K": "重大事項", "SC 13G": "大股東持股", "SC 13G/A": "大股東持股更新", "SC 13D": "大股東持股",
                 "4": "內部人持股異動", "3": "內部人初次申報", "144": "內部人擬出售", "F-3": "發行登記",
-                "S-8": "員工股票計畫登記", "424B2": "公開說明書"}
+                "S-8": "員工股票計畫登記", "424B2": "公開說明書", "SCHEDULE 13G": "大股東持股",
+                "SCHEDULE 13G/A": "大股東持股更新", "SCHEDULE 13D": "大股東持股"}
+# 6-K 檔名常帶主題，沒有文件標題時用來提示
+SEC_HINTS = [("revenue", "營收公告"), ("board", "董事會決議"), ("quarterly", "季報"), ("q1", "第一季"), ("q2", "第二季"),
+             ("q3", "第三季"), ("q4", "第四季"), ("monthend", "月底資訊"), ("dividend", "股利"), ("agm", "股東會"),
+             ("statement", "聲明"), ("earnings", "法說 / 財報"), ("fs", "財務報表"), ("annual", "年報")]
 
 # 越具體的放越前面（「摩根士丹利」要比「摩根」先比對到）
 BROKERS = [
@@ -277,8 +282,11 @@ def parse_sec(j: dict, today: date) -> dict:
         acc = r["accessionNumber"][i]
         doc = r["primaryDocument"][i]
         desc = (r.get("primaryDocDescription") or [""] * (i + 1))[i] or ""
+        generic = {form.upper(), f"FORM {form.upper()}", "FORM 6-K", "6-K"}
+        low = doc.lower()
         filings.append({"date": d, "form": form, "form_zh": SEC_FORMS_ZH.get(form, ""),
-                        "title": desc if desc and desc.upper() != form.upper() else "",
+                        "title": desc if desc and desc.upper() not in generic else "",
+                        "hint": next((zh for k, zh in SEC_HINTS if re.search(rf"(^|[^a-z]){k}", low)), ""),
                         "link": f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc.replace('-', '')}/{doc}"})
     return {"name": j.get("name", ""), "filings": filings[:15], "insider": insider}
 
@@ -307,7 +315,9 @@ def sec_filings(symbol: str, today: date) -> dict | None:
     if symbol not in SEC_CIK:
         return None
     out = parse_sec(_sec_get(f"https://data.sec.gov/submissions/CIK{SEC_CIK[symbol]}.json").json(), today)
-    for f in out["filings"][:6]:
+    # 打開文件抓標題要連 www.sec.gov，SEC 規定要附聯絡方式的 User-Agent；
+    # 有在 Secrets 設 SEC_USER_AGENT（例如「名字 email」）才抓，沒設就只用檔名提示
+    for f in (out["filings"][:6] if os.environ.get("SEC_USER_AGENT") else []):
         if not f["title"]:
             time.sleep(0.3)                    # SEC 上限每秒 10 次，放慢一點
             f["title"] = sec_title(f["link"])
