@@ -1,0 +1,22 @@
+name: 暫時：SEC 來源測試
+on:
+  push:
+    branches: [claude/project-thread-djaohg]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          for UA in "tw-stock-cloud personal dashboard" "Mozilla/5.0"; do
+            echo "##### UA=$UA"
+            for u in "https://www.sec.gov/files/company_tickers.json" "https://data.sec.gov/submissions/CIK0001046179.json"; do
+              echo "=== $u"; curl -sS -m 25 -A "$UA" -H "Accept-Encoding: gzip" --compressed -o /tmp/o -w "HTTP %{http_code} %{size_download}B\n" "$u"; head -c 300 /tmp/o; echo
+            done
+          done
+          curl -sS -m 25 -A "tw-stock-cloud personal dashboard" --compressed "https://data.sec.gov/submissions/CIK0001046179.json" | python3 -c "
+          import json,sys; j=json.load(sys.stdin); r=j['filings']['recent']
+          print(j['name'], j['tickers'])
+          for i in range(8): print(r['filingDate'][i], r['form'][i], r['accessionNumber'][i], r['primaryDocument'][i], r['primaryDocDescription'][i], r.get('items',[''])[i])
+          "
