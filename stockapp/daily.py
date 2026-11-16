@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import analysts, broker, config, data, holdings, insights, journal, notify, verdict
+from stockapp import analysts, broker, config, data, holdings, insights, journal, notify, reports, verdict
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -252,7 +252,9 @@ def main(argv=None) -> int:
                 div_events[h.id] = _safe(lambda: data.dividend_events(h.id), [], f"{h.id} 配息行事曆")
         pf = holdings.portfolio(hs, prices, names, div_events, now.date())
 
-    add_verdicts(items, holdings.public_view(pf) if pf else None, now.date())
+    pf_public = holdings.public_view(pf) if pf else None
+    add_verdicts(items, pf_public, now.date())
+    prev = reports._load_data()     # 覆寫前先留一份，盤後分析用來比較評分變化
 
     config.DOCS.mkdir(exist_ok=True)
     public_items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in items]
@@ -266,6 +268,10 @@ def main(argv=None) -> int:
         vm = verdict.summary_message(items)
         if vm:
             msg = vm + "\n\n" + msg
+        pm = _safe(lambda: reports.postmarket_message(items, prev, pf_public, reports.fetch_index(), now.date()),
+                   "", "盤後分析")
+        if pm:
+            msg = pm + "\n\n" + msg
         if pf:
             msg += "\n\n" + holdings.summary_text(pf)
         if broker_notes:
