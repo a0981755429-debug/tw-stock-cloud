@@ -70,6 +70,15 @@ a{color:var(--accent)}
 .wbar span{display:block;height:100%}
 .hold td:nth-child(n+2){white-space:nowrap}
 .warn{color:#b7791f;font-size:13px;margin-top:6px}
+.vd{border-radius:10px;padding:10px 12px;background:var(--chip)}
+.vd .hd{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.vd .act{font-size:16px;font-weight:700}
+.vd .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+@media (max-width:520px){.vd .cols{grid-template-columns:1fr}}
+.vd h4{font-size:12px;margin:0 0 4px;font-weight:600}
+.vd li{font-size:13px}
+.vd .pts{font-variant-numeric:tabular-nums;font-weight:600;margin-right:4px}
+.vd .note{font-size:12px;color:var(--muted);margin-top:6px}
 </style>
 </head>
 <body>
@@ -79,8 +88,8 @@ a{color:var(--accent)}
   <div class="tabs" id="tabs">
     <button class="tab on" data-f="all">全部</button>
     <button class="tab" data-f="hold">持股</button>
-    <button class="tab" data-f="bull">偏多</button>
-    <button class="tab" data-f="bear">偏空</button>
+    <button class="tab" data-f="bull">綜合偏多</button>
+    <button class="tab" data-f="bear">綜合偏空</button>
     <button class="tab" data-f="alert">有設提醒</button>
   </div>
 </header>
@@ -89,7 +98,7 @@ a{color:var(--accent)}
   <div id="list"><div class="empty">載入中…</div></div>
   <div class="foot">
     <a href="analysts/">🧑‍💼 分析師觀點</a> · <a href="finance/">💰 財務規劃台</a> · <a href="journal/">📓 交易紀錄</a> · <a id="edit" href="#">✏️ 編輯自選股與提醒</a><br>
-    紅漲綠跌 · 訊號為規則式參考，非投資建議
+    紅漲綠跌 · 綜合訊號為規則式參考工具，非投資建議
   </div>
 </main>
 <script>
@@ -100,7 +109,9 @@ function cls(v){ return v == null ? "flat" : v > 0 ? "up" : v < 0 ? "down" : "fl
 function pct(v){ return v == null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2) + "%"; }
 function num(v, d){ return v == null ? "—" : Number(v).toLocaleString("zh-TW", {maximumFractionDigits: d ?? 2}); }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
-function badge(sig){
+function vClass(v){ return v.level > 0 ? "b-bull" : v.level < 0 ? "b-bear" : "b-neu"; }
+function badge(sig, v){
+  if (v) return `<span class="badge ${vClass(v)}">${esc(v.label)} ${v.score > 0 ? "+" : ""}${v.score}</span>`;
   if (sig.etf) return `<span class="badge b-neu">殖利率 ${sig.etf.yield == null ? "—" : sig.etf.yield.toFixed(1) + "%"}</span>`;
   const k = sig.label === "偏多" ? "b-bull" : sig.label === "偏空" ? "b-bear" : "b-neu";
   return `<span class="badge ${k}">${esc(sig.label)} ${sig.score > 0 ? "+" : ""}${sig.score}</span>`;
@@ -187,6 +198,19 @@ function etfBlock(e){
   </div></div>`;
 }
 
+function verdictBlock(v){
+  if (!v) return "";
+  const li = (xs, c) => xs.length ? xs.map(x => `<li><span class="pts ${c}">${x.pts > 0 ? "+" : ""}${x.pts}</span>${esc(x.factor)}：${esc(x.text)}</li>`).join("") : `<li class="live">沒有</li>`;
+  return `<div class="sec"><h3>綜合訊號（技術・籌碼・基本面・分析師・殖利率・持股）</h3><div class="vd">
+    <div class="hd"><span class="badge ${vClass(v)}">${esc(v.label)} ${v.score > 0 ? "+" : ""}${v.score}</span><span class="act">${esc(v.action)}</span>${v.held ? `<span class="live">持股中</span>` : ""}</div>
+    <div class="cols"><div><h4 class="up">支持買進</h4><ul>${li(v.buy, "up")}</ul></div>
+      <div><h4 class="down">支持賣出 / 暫緩</h4><ul>${li(v.sell, "down")}</ul></div></div>
+    ${v.info.length ? `<div class="note">參考（不加分）：<ul>${v.info.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : ""}
+    ${v.missing.length ? `<div class="note">缺資料：${esc(v.missing.join("、"))}</div>` : ""}
+    <div class="note">總分 ≥ +40 強烈偏多、+15 偏多、−15 偏空、≤ −40 強烈偏空；各因子分數上限與規則見 <a href="https://github.com/a0981755429-debug/tw-stock-cloud/blob/main/stockapp/verdict.py">verdict.py</a>。<br>⚠️ 規則式參考工具，不是投資建議，也不保證獲利；資料可能延遲或缺漏，請自行判斷。</div>
+  </div></div>`;
+}
+
 function alertText(a){
   const parts = [];
   if (a.yield_above != null) parts.push(`殖利率高於 ${a.yield_above}%`);
@@ -241,8 +265,8 @@ function render(){
   const list = DATA.stocks.filter(s =>
     FILTER === "all" ||
     (FILTER === "hold" && held.has(s.id)) ||
-    (FILTER === "bull" && s.signal.label === "偏多") ||
-    (FILTER === "bear" && s.signal.label === "偏空") ||
+    (FILTER === "bull" && (s.verdict ? s.verdict.level > 0 : s.signal.label === "偏多")) ||
+    (FILTER === "bear" && (s.verdict ? s.verdict.level < 0 : s.signal.label === "偏空")) ||
     (FILTER === "alert" && Object.values(s.alert || {}).some(v => v != null)));
   if (!list.length){ $("#list").innerHTML = `<div class="empty">沒有符合的股票</div>`; return; }
   $("#list").innerHTML = list.map(s => {
@@ -255,11 +279,12 @@ function render(){
       <div class="row">
         <div class="nm"><b>${esc(s.name)}</b><span class="id">${esc(s.id)}</span>
           <div class="meta">${esc(s.market)}${s.industry ? " · " + esc(s.industry) : ""}</div></div>
-        ${badge(s.signal)}
+        ${badge(s.signal, s.verdict)}
         <div class="px"><div class="p ${cls(chg)}">${num(price)}</div><div class="c ${cls(chg)}">${pct(chg)}</div>${tag}</div>
       </div>
       <div class="detail">
-        <div class="sec"><h3>${s.signal.etf ? "配息分析" : "買賣訊號分析"}</h3><ul>
+        ${verdictBlock(s.verdict)}
+        <div class="sec"><h3>${s.signal.etf ? "配息分析" : `技術訊號（${esc(s.signal.label)} ${s.signal.score > 0 ? "+" : ""}${s.signal.score}）`}</h3><ul>
           ${s.signal.reasons.map(r => `<li class="${s.signal.events.includes(r) ? "ev" : ""}">${esc(r)}</li>`).join("")}
         </ul></div>
         <div class="sec"><h3>近半年走勢（還原權值）</h3>${chart(s.chart)}</div>

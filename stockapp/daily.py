@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from stockapp import broker, config, data, holdings, insights, journal, notify
+from stockapp import analysts, broker, config, data, holdings, insights, journal, notify, verdict
 from stockapp.indicators import sma
 from stockapp.signals import analyze
 
@@ -46,7 +46,7 @@ def etf_signal(stock: config.Stock, close: float | None, div: dict, prem: dict |
         p = prem["premium_pct"]
         tag = "溢價偏高，不宜追買" if p > 1 else "折價，相對便宜" if p < -0.5 else "接近淨值"
         reasons.append(f"市價相對淨值 {p:+.2f}%（{tag}）")
-    reasons.append("高股息 ETF 以長期領息為主，不使用技術訊號與停損")
+    reasons.append("高股息 ETF 以長期領息、看含息總報酬為主，不使用停損；技術面只在綜合訊號當低權重的擇時參考")
     return {"score": 0, "label": "ETF", "reasons": reasons, "events": [], "indicators": {},
             "etf": {"yield": round(y, 2) if y else None, **div,
                     "next_ex": next_ex, "next_dps": next_dps, "next_src": src,
@@ -97,6 +97,7 @@ def build_stock(stock: config.Stock, info: dict, premiums: dict | None = None) -
                 div = {"ttm_dps": insights.ttm_dps(events, today), "last_dps": past[-1]["dps"],
                        "last_ex": past[-1]["ex"],
                        "count": sum(1 for e in past if e["ex"] > (today - timedelta(days=365)).isoformat())}
+        item["_tech"] = dict(item["signal"])   # ETF 的技術面只給綜合訊號當擇時參考
         item["signal"] = etf_signal(stock, item["close"], div, (premiums or {}).get(stock.id), nxt)
         item["fundamentals"] = {}
         return item
@@ -131,6 +132,35 @@ def _add_insights(item: dict) -> None:
     for ev in events:
         sig["events"].append(ev)
         sig["reasons"].append(ev)
+
+
+def _analyst_data() -> dict[str, dict]:
+    """上一次「分析師觀點」的結果（共識目標價變動慢，用前一次的即可）+ 今天的重大訊息。"""
+    try:
+        j = json.loads((config.DOCS / "analysts.json").read_text(encoding="utf-8"))
+        out = {s["id"]: s for s in j.get("stocks") or []}
+    except (FileNotFoundError, ValueError):
+        out = {}
+    return out
+
+
+def add_verdicts(items: list[dict], pf_public: dict | None, today: date,
+                 analyst: dict[str, dict] | None = None, fresh_mops: dict | None = None) -> None:
+    """每檔加上 item["verdict"]：綜合買賣訊號（買進理由 / 賣出理由 / 分數 / 結論）。"""
+    analyst = _analyst_data() if analyst is None else analyst
+    if fresh_mops is None:
+        fresh_mops = _safe(analysts.mops_today, {}, "今日重大訊息")
+    held = {r["id"]: r for r in (pf_public or {}).get("rows") or []}
+    for it in items:
+        try:
+            a = dict(analyst.get(it["id"]) or {})
+            a["mops"] = analysts.merge_mops(a.get("mops") or [], fresh_mops.get(it["id"], []), today)
+            if it["signal"].get("etf") is not None:
+                it["verdict"] = verdict.etf(it, it.get("_tech"), a, held.get(it["id"]), today)
+            else:
+                it["verdict"] = verdict.stock(it, a, held.get(it["id"]), today)
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s 綜合訊號失敗：%s", it["id"], e)
 
 
 def summary_message(items: list[dict], today: str) -> str:
@@ -177,8 +207,13 @@ def main(argv=None) -> int:
     now = datetime.now(TPE)
     premiums = data.etf_premiums() if any(data.is_etf(s.id) for s in settings.stocks) else {}
     log.info("ETF 折溢價資料 %d 檔", len(premiums))
+    # 先讀持股（永豐庫存同步），持股但不在自選清單的也一起算綜合訊號
+    hs, broker_notes = broker.sync(holdings.load())
+    watch_ids = {s.id for s in settings.stocks}
+    targets = list(settings.stocks) + [config.Stock(id=h.id, note="持股（不在自選清單）")
+                                       for h in hs if h.id not in watch_ids]
     items = []
-    for s in settings.stocks:
+    for s in targets:
         log.info("處理 %s", s.id)
         try:
             items.append(build_stock(s, info, premiums))
@@ -203,7 +238,6 @@ def main(argv=None) -> int:
 
     # 持股損益
     pf = None
-    hs, broker_notes = broker.sync(holdings.load())
     if hs:
         prices = {it["id"]: it["close"] for it in items if it["close"] is not None}
         names = {sid: v["name"] for sid, v in info.items()}
@@ -218,6 +252,8 @@ def main(argv=None) -> int:
                 div_events[h.id] = _safe(lambda: data.dividend_events(h.id), [], f"{h.id} 配息行事曆")
         pf = holdings.portfolio(hs, prices, names, div_events, now.date())
 
+    add_verdicts(items, holdings.public_view(pf) if pf else None, now.date())
+
     config.DOCS.mkdir(exist_ok=True)
     public_items = [{k: v for k, v in it.items() if not k.startswith("_")} for it in items]
     out = {"updated_at": now.strftime("%Y-%m-%d %H:%M"), "stocks": public_items,
@@ -227,6 +263,9 @@ def main(argv=None) -> int:
 
     if not args.no_push and settings.signal_notify and items:
         msg = summary_message(items, now.strftime("%m/%d"))
+        vm = verdict.summary_message(items)
+        if vm:
+            msg = vm + "\n\n" + msg
         if pf:
             msg += "\n\n" + holdings.summary_text(pf)
         if broker_notes:
