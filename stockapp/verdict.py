@@ -288,7 +288,9 @@ def etf(item: dict, tech: dict | None = None, analyst: dict | None = None, hold:
 
     _concentration(b, hold, etf=True)
     _holding_info(b, hold)
-    return b.result(bool(hold))
+    res = b.result(bool(hold))
+    res["yield_dps"] = yl.get("recent_dps") or e.get("ttm_dps")   # 盤中用即時價重算殖利率
+    return res
 
 
 def one_line(it: dict) -> str:
