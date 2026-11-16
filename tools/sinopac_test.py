@@ -13,7 +13,8 @@ import shioaji as sj
 
 
 def main() -> int:
-    key, sec = os.environ.get("SJ_TEST_API_KEY"), os.environ.get("SJ_TEST_SECRET_KEY")
+    key = os.environ.get("SJ_TEST_API_KEY") or os.environ.get("SJ_API_KEY")
+    sec = os.environ.get("SJ_TEST_SECRET_KEY") or os.environ.get("SJ_SECRET_KEY")
     if not key or not sec:
         print("❌ 沒有設定 SJ_TEST_API_KEY / SJ_TEST_SECRET_KEY")
         return 1

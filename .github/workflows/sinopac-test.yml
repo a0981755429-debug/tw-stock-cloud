@@ -20,4 +20,6 @@ jobs:
         env:
           SJ_TEST_API_KEY: ${{ secrets.SJ_TEST_API_KEY }}
           SJ_TEST_SECRET_KEY: ${{ secrets.SJ_TEST_SECRET_KEY }}
+          SJ_API_KEY: ${{ secrets.SJ_API_KEY }}
+          SJ_SECRET_KEY: ${{ secrets.SJ_SECRET_KEY }}
         run: python tools/sinopac_test.py
