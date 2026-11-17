@@ -3,7 +3,12 @@ name: 盤中提醒
 on:
   schedule:
     - cron: "*/10 1-5 * * 1-5"  # 台北時間 週一~五 09:00~13:50 每 10 分鐘（程式會自己跳過收盤後與休市日）
-  workflow_dispatch:
+  workflow_dispatch:            # 手動，或外部排程（cron-job.org）呼叫
+    inputs:
+      force:
+        description: "不管時段都檢查（測試用）；外部排程請設 false"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -30,7 +35,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HOLDINGS: ${{ secrets.HOLDINGS }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.force }}" = "false" ]; then
             python -m stockapp.intraday
           else
             python -m stockapp.intraday --force   # 手動執行：不管時段都檢查（測試用）

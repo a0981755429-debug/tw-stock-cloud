@@ -26,6 +26,24 @@ INDEX_ID = "t00"          # mis 的加權指數代號
 US = [("^SOX", "費城半導體"), ("^IXIC", "那斯達克"), ("^GSPC", "S&P 500"), ("NVDA", "輝達"), ("TSM", "台積電 ADR")]
 ADR_RATIO = {"TSM": ("2330", 5)}   # 1 股 ADR = 5 股台股
 HOLIDAY_API = "https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule"
+SENT = config.ROOT / "state" / "reports_sent.json"   # 每份報告每天只發一次（排程有多個備援時間）
+WINDOW = {"premarket": (time(6, 30), time(9, 0)), "midday": (time(9, 0), time(13, 35))}
+
+
+def already_sent(kind: str, day: date, path=SENT) -> bool:
+    return config.load_state(path).get(kind) == day.isoformat()
+
+
+def mark_sent(kind: str, day: date, path=SENT) -> None:
+    st = config.load_state(path)
+    st[kind] = day.isoformat()
+    config.save_state(st, path)
+
+
+def in_window(kind: str, now: datetime) -> bool:
+    """排程延遲太久（例如盤前分析拖到中午才跑）就不發，免得收到過時的報告。"""
+    start, end = WINDOW[kind]
+    return now.weekday() < 5 and start <= now.time() <= end
 
 
 def _pct(v) -> str:
@@ -309,16 +327,21 @@ def main(argv=None) -> int:
     settings = config.load()
     if not settings.signal_notify:
         return 0
+    today = now.date()
+    if not args.force:
+        if not in_window(args.kind, now):
+            log.info("不在 %s 的發送時段（%s），結束", args.kind, now.strftime("%H:%M"))
+            return 0
+        if already_sent(args.kind, today):
+            log.info("今天的 %s 已經發過，結束", args.kind)
+            return 0
     d = _load_data()
     if args.kind == "premarket":
-        if not args.force and is_holiday(now.date()):
+        if not args.force and is_holiday(today):
             log.info("今天休市，不發盤前分析")
             return 0
-        msg = premarket_message(d, fetch_us(), now.date())
+        msg = premarket_message(d, fetch_us(), today)
     else:
-        if not args.force and (now.weekday() >= 5 or not time(9, 0) <= now.time() <= time(13, 35)):
-            log.info("非交易時段，結束")
-            return 0
         pairs = [(it["id"], "tpex" if it.get("market") == "上櫃" else "twse") for it in d.get("stocks") or []]
         quotes = data.live_quotes(pairs + [(INDEX_ID, "twse")])
         ymd = now.strftime("%Y%m%d")
@@ -328,8 +351,9 @@ def main(argv=None) -> int:
         msg = midday_message(d, quotes, now)
     if args.no_push:
         print(msg)
-    else:
-        notify.telegram(msg)
+        return 0
+    if notify.telegram(msg) and not args.force:   # 手動測試不算，免得擋掉當天正式那則
+        mark_sent(args.kind, today)
     return 0
 
 

@@ -2,18 +2,28 @@ name: 盤前 / 盤中分析推播
 
 on:
   schedule:
-    - cron: "0 0 * * 1-5"    # 台北 08:00 盤前分析（GitHub 排程常延遲 5~30 分鐘，約 08:05~08:30 收到）
-    - cron: "0 4 * * 1-5"    # 台北 12:00 盤中買賣訊號（約 12:05~12:30 收到）
-  workflow_dispatch:
+    # GitHub 免費排程是「盡力而為」：整點最擁擠、常延遲甚至整次被丟掉。
+    # 所以每份報告排 3 個時間當備援、避開整點；程式會記錄「今天發過了」，不會重複推播。
+    - cron: "5,25,45 0 * * 1-5"   # 台北 08:05 / 08:25 / 08:45 盤前分析
+    - cron: "5,25,45 4 * * 1-5"   # 台北 12:05 / 12:25 / 12:45 盤中買賣訊號
+  workflow_dispatch:              # 手動，或外部排程（cron-job.org）呼叫
     inputs:
       kind:
         description: "要跑哪一份"
         type: choice
         options: [premarket, midday]
         default: premarket
+      force:
+        description: "不管休市 / 時段 / 今天發過沒都發（測試用）；外部排程請設 false"
+        type: boolean
+        default: true
 
 permissions:
-  contents: read
+  contents: write   # 存 state/reports_sent.json（避免重複推播）
+
+concurrency:
+  group: data-update
+  cancel-in-progress: false
 
 jobs:
   report:
@@ -32,9 +42,21 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python -m stockapp.reports "${{ inputs.kind }}" --force   # 手動：不管休市 / 時段都發（測試用）
-          elif [ "${{ github.event.schedule }}" = "0 0 * * 1-5" ]; then
+            if [ "${{ inputs.force }}" = "true" ]; then
+              python -m stockapp.reports "${{ inputs.kind }}" --force
+            else
+              python -m stockapp.reports "${{ inputs.kind }}"
+            fi
+          elif [ "$(TZ=Asia/Taipei date +%H)" -lt 10 ]; then
             python -m stockapp.reports premarket
           else
             python -m stockapp.reports midday
           fi
+      - name: 存檔（記錄今天已發）
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/reports_sent.json 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "推播紀錄 $(TZ=Asia/Taipei date '+%F %H:%M')"
+          git pull --rebase -X theirs origin main && git push
