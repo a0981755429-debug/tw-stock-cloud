@@ -243,7 +243,7 @@ function renderPf(){
   const hasTr = rows.length && rows.every(r => r.tr != null);
   let ttr = null;
   if (hasTr) { let c2 = 0, g2 = 0; rows.forEach(r => { const c = r.w / (1 + r.pl / 100); c2 += c; g2 += c * (1 + r.tr / 100); }); ttr = c2 ? (g2 / c2 - 1) * 100 : null; }
-  el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "盤中即時" : "收盤"} · 只顯示百分比</span></h2>
+  el.innerHTML = `<div class="card pf"><h2>我的持股 <span class="live">${live ? "即時" : "收盤"} · 只顯示百分比</span></h2>
     <div class="kpis">
       <div class="kv"><span>股價報酬</span><b class="${cls(tpl)}">${tpl == null ? "—" : pct(tpl)}</b></div>
       <div class="kv"><span>含息總報酬</span><b class="${cls(ttr)}">${ttr == null ? "—" : pct(ttr)}</b></div>
@@ -268,14 +268,15 @@ function render(){
     (FILTER === "bull" && (s.verdict ? s.verdict.level > 0 : s.signal.label === "偏多")) ||
     (FILTER === "bear" && (s.verdict ? s.verdict.level < 0 : s.signal.label === "偏空")) ||
     (FILTER === "alert" && Object.values(s.alert || {}).some(v => v != null)));
+  const open = new Set([...document.querySelectorAll(".card.open")].map(c => c.dataset.id));  // 更新報價時保持已展開的卡片
   if (!list.length){ $("#list").innerHTML = `<div class="empty">沒有符合的股票</div>`; return; }
   $("#list").innerHTML = list.map(s => {
     const q = QUOTES[s.id];
     const price = q ? q.price : s.close;
     const chg = q ? q.change_pct : s.change_pct;
-    const tag = q ? `<div class="live">盤中 ${esc(q.time)}</div>` : `<div class="live">收盤 ${esc(s.date || "")}</div>`;
+    const tag = q ? `<div class="live">即時 ${esc(q.time || LIVE_AT)}</div>` : `<div class="live">收盤 ${esc(s.date || "")}</div>`;
     const ind = s.signal.indicators || {};
-    return `<div class="card" data-id="${esc(s.id)}">
+    return `<div class="card${open.has(s.id) ? " open" : ""}" data-id="${esc(s.id)}">
       <div class="row">
         <div class="nm"><b>${esc(s.name)}</b><span class="id">${esc(s.id)}</span>
           <div class="meta">${esc(s.market)}${s.industry ? " · " + esc(s.industry) : ""}</div></div>
@@ -319,27 +320,156 @@ $("#tabs").addEventListener("click", e => {
   $("#edit").href = m && repo ? `https://github.com/${m[1]}/${repo}/edit/main/watchlist.yml` : "../watchlist.yml";
 })();
 
+// ---------------------------------------------------------------- 即時報價（瀏覽器直接抓）
+// 打開網頁時由「你的瀏覽器」直接向報價來源要最新價，不經過 GitHub Actions，不佔用任何額度。
+// 依序試：證交所即時看盤 → Yahoo 奇摩股市 → Yahoo Finance；哪個在你的瀏覽器能用就用哪個，
+// 全部失敗時退回 Actions 盤中寫的 quotes.json（舊做法）。只抓股價，不會送出任何持股資訊。
+const LIVE_EVERY = 20 * 1000;          // 盤中每 20 秒更新一次
+const DEAD = new Set();                 // 這次開網頁已確定抓不到的來源，就不再重試
+let LIVE_SRC = "", LIVE_AT = "";
+
+function twNow(){ return new Date(Date.now() + 8 * 3600e3); }      // 台灣時間（用 UTC 欄位讀）
+function twToday(){ return twNow().toISOString().slice(0, 10); }
+function inSession(){                                               // 週一到五 08:58–13:35
+  const d = twNow(), w = d.getUTCDay(), m = d.getUTCHours() * 60 + d.getUTCMinutes();
+  return w >= 1 && w <= 5 && m >= 538 && m <= 815;
+}
+function pos(v){ const x = parseFloat(String(v ?? "").split("_")[0]); return x > 0 ? x : null; }
+function withTimeout(p, ms){ return Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error("timeout")), ms))]); }
+function mkQuote(price, prev, date, time){
+  if (!price) return null;
+  return {price, change_pct: prev ? (price / prev - 1) * 100 : null, date, time, live: true};
+}
+
+// 1) 證交所 MIS（和 Actions 盤中用的是同一個來源）
+async function srcMis(stocks){
+  const ex = stocks.map(s => `${s.market === "上櫃" ? "otc" : "tse"}_${s.id}.tw`).join("|");
+  const r = await withTimeout(fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${encodeURIComponent(ex)}&json=1&delay=0&_=${Date.now()}`), 8000);
+  const out = {};
+  for (const m of (await r.json()).msgArray || []) {
+    let p = pos(m.z) || pos(m.pz);
+    if (!p) { const a = pos(m.a), b = pos(m.b); p = a && b ? (a + b) / 2 : a || b; }
+    const d = String(m.d || "");
+    const q = mkQuote(p, pos(m.y), d ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}` : "", m.t || "");
+    if (m.c && q) out[m.c] = q;
+  }
+  return out;
+}
+
+// 2) Yahoo 奇摩股市（JSONP：用 <script> 載入，不受跨網域限制）
+function jsonp(url, ms){
+  return new Promise((ok, no) => {
+    const cb = "_yq" + Math.random().toString(36).slice(2), el = document.createElement("script");
+    const done = () => { delete window[cb]; el.remove(); clearTimeout(t); };
+    const t = setTimeout(() => { done(); no(new Error("timeout")); }, ms);
+    window[cb] = d => { done(); ok(d); };
+    el.onerror = () => { done(); no(new Error("load")); };
+    el.src = url + (url.includes("?") ? "&" : "?") + "callback=" + cb;
+    document.head.appendChild(el);
+  });
+}
+async function srcYahooTw(stocks){
+  const out = {};
+  await Promise.all(stocks.map(async s => {
+    try {
+      const d = await jsonp(`https://tw.quote.finance.yahoo.net/quote/q?type=ta&perd=d&mkt=10&sym=${encodeURIComponent(s.id)}&v=1&_=${Date.now()}`, 6000);
+      const ta = (d && d.ta) || [], last = ta[ta.length - 1], prev = ta[ta.length - 2];
+      if (!last) return;
+      const t = String(last.t || "");
+      const q = mkQuote(pos(last.c), prev && pos(prev.c), t ? `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}` : "", "");
+      if (q) out[s.id] = q;
+    } catch {}
+  }));
+  if (!Object.keys(out).length) throw new Error("empty");
+  return out;
+}
+
+// 3) Yahoo Finance（國際版）
+async function srcYahoo(stocks){
+  const out = {};
+  await Promise.all(stocks.map(async s => {
+    try {
+      const sym = s.id + (s.market === "上櫃" ? ".TWO" : ".TW");
+      const r = await withTimeout(fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${sym}?interval=1d&range=1d`), 8000);
+      const m = (await r.json()).chart.result[0].meta;
+      const tm = new Date((m.regularMarketTime || 0) * 1000 + 8 * 3600e3).toISOString();
+      const q = mkQuote(pos(m.regularMarketPrice), pos(m.chartPreviousClose) || pos(m.previousClose), tm.slice(0, 10), tm.slice(11, 19));
+      if (q) out[s.id] = q;
+    } catch {}
+  }));
+  if (!Object.keys(out).length) throw new Error("empty");
+  return out;
+}
+
+const SOURCES = [["證交所", srcMis], ["Yahoo 奇摩股市", srcYahooTw], ["Yahoo Finance", srcYahoo]];
+
+// 盤後資料若已是今天收盤後產生的（官方收盤價），就以它為準，不再蓋上即時價
+function officialDone(){ const u = (DATA && DATA.updated_at) || ""; return u.slice(0, 10) === twToday() && u.slice(11) >= "14:00"; }
+
+async function liveQuotes(){
+  if (!DATA || officialDone()) return {};
+  const today = twToday();
+  let need = DATA.stocks.slice(), got = {}, used = [];
+  for (const [name, fn] of SOURCES) {
+    if (!need.length) break;
+    if (DEAD.has(name)) continue;
+    try {
+      const qs = await fn(need);
+      let n = 0;
+      for (const [k, v] of Object.entries(qs)) if (v.date === today && !got[k]) { got[k] = v; n++; }
+      if (n) used.push(name);
+      need = need.filter(s => !got[s.id]);
+    } catch (e) { DEAD.add(name); }   // 被瀏覽器擋（跨網域）或來源掛了 → 這次不再試
+  }
+  LIVE_SRC = used.join("、");
+  return got;
+}
+
+// 舊做法：Actions 盤中寫的 quotes.json
+async function fileQuotes(bust){
+  const out = {};
+  try { const q = await (await fetch("quotes.json" + bust)).json();
+    const today = twToday(), u = q.updated_at || "";
+    if (u.slice(0, 10) === today && u.slice(11) <= "13:40" && u > DATA.updated_at) {
+      const ymd = today.replace(/-/g, "");
+      for (const [k, v] of Object.entries(q.quotes || {})) if (v.live && (!v.date || v.date === ymd)) out[k] = v;
+      LIVE_SRC = "盤中排程"; LIVE_AT = u.slice(11);
+    }
+  } catch {}
+  return out;
+}
+
+function showUpd(){
+  $("#upd").textContent = `盤後資料 ${DATA.updated_at}` +
+    (Object.keys(QUOTES).length ? ` · 即時報價 ${LIVE_AT}（${LIVE_SRC}${inSession() ? "，每 20 秒更新" : ""}）` : "");
+}
+
+async function refreshLive(){
+  if (!DATA || document.hidden) return;
+  const qs = await liveQuotes();
+  if (Object.keys(qs).length) {
+    QUOTES = qs; LIVE_AT = twNow().toISOString().slice(11, 19);
+    showUpd(); render();
+  }
+}
+
 async function load(){
   const bust = "?t=" + Date.now();
   try {
     DATA = await (await fetch("data.json" + bust)).json();
   } catch { $("#list").innerHTML = `<div class="empty">還沒有資料，等第一次盤後更新完成就會出現。</div>`; $("#upd").textContent = ""; return; }
-  QUOTES = {}; DATA._q = null;
-  try { const q = await (await fetch("quotes.json" + bust)).json();
-    const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
-    // 只用「今天、盤中時段、比盤後資料新」的報價；收盤後一律以盤後官方收盤價為準
-    const u = q.updated_at || "";
-    if (u.slice(0, 10) === today && u.slice(11) <= "13:40" && u > DATA.updated_at) {
-      const ymd = today.replace(/-/g, "");
-      for (const [k, v] of Object.entries(q.quotes || {})) if (v.live && (!v.date || v.date === ymd)) QUOTES[k] = v;
-      DATA._q = u;
-    }
-  } catch {}
-  $("#upd").textContent = `盤後資料 ${DATA.updated_at}` + (DATA._q ? ` · 盤中報價 ${DATA._q.slice(11)}` : "");
-  render();
+  QUOTES = {}; LIVE_SRC = ""; LIVE_AT = "";
+  render(); showUpd();                       // 先用盤後資料畫出來，不讓你等
+  let qs = await liveQuotes();
+  if (Object.keys(qs).length) LIVE_AT = twNow().toISOString().slice(11, 19);
+  else qs = await fileQuotes(bust);
+  QUOTES = qs;
+  showUpd(); render();
 }
 load();
-setInterval(load, 5 * 60 * 1000);
+setInterval(() => { if (inSession()) refreshLive(); }, LIVE_EVERY);
+setInterval(load, 30 * 60 * 1000);           // 盤後資料半小時重讀一次
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLive(); });
 </script>
 </body>
 </html>
