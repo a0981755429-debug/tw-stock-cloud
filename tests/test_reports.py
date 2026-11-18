@@ -76,3 +76,20 @@ def test_holiday_parses_twse_roc_dates(monkeypatch):
     assert reports.is_holiday(date(2027, 1, 1))
     assert not reports.is_holiday(date(2027, 1, 4))
     assert not reports.is_holiday(date(2027, 1, 5))
+
+
+def test_window_and_once_per_day(tmp_path):
+    from datetime import timedelta, timezone
+    tpe = timezone(timedelta(hours=8))
+    tue = datetime(2026, 11, 17, 8, 25, tzinfo=tpe)
+    assert reports.in_window("premarket", tue)
+    assert not reports.in_window("midday", tue)
+    assert reports.in_window("midday", tue.replace(hour=12, minute=45))
+    assert not reports.in_window("midday", tue.replace(hour=15))          # 排程拖太晚就不發
+    assert not reports.in_window("premarket", datetime(2026, 11, 21, 8, 5, tzinfo=tpe))  # 週六
+    f = tmp_path / "sent.json"
+    assert not reports.already_sent("midday", tue.date(), f)
+    reports.mark_sent("midday", tue.date(), f)
+    assert reports.already_sent("midday", tue.date(), f)
+    assert not reports.already_sent("premarket", tue.date(), f)
+    assert not reports.already_sent("midday", date(2026, 11, 18), f)

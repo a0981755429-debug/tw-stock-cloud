@@ -130,8 +130,27 @@ stocks:
 | 約 12:00～12:30 | ⏱ **盤中買賣訊號**：用即時價對照昨天的綜合訊號，列出偏多又回檔的、ETF 即時殖利率到門檻的、到你設買賣點的、持股偏空或大跌的 | `.github/workflows/reports.yml` |
 | 約 17:30～18:00 | 🌇 **盤後分析**：加權指數、你的持股今天漲跌（依占比估算）、評分明顯變動與原因、自選漲跌最多、接下來的除息；接著是綜合訊號與持股損益 | `.github/workflows/daily.yml` |
 
-GitHub 排程常延遲 5～30 分鐘。休市日（週末、證交所公告的國定假日）不發。想關掉全部推播：`watchlist.yml` 改 `signal_notify: false`。
-手動測試：Actions →「盤前 / 盤中分析推播」→ Run workflow，選 premarket 或 midday（手動跑不管休市都會發）。
+休市日（週末、證交所公告的國定假日）不發。想關掉全部推播：`watchlist.yml` 改 `signal_notify: false`。
+手動測試：Actions →「盤前 / 盤中分析推播」→ Run workflow，選 premarket 或 midday（`force` 勾著就不管休市都會發）。
+
+**GitHub 排程不可靠**：免費的 GitHub 排程是「盡力而為」，常延遲幾小時、甚至整次被丟掉（2026-11-17 盤前、盤中兩份都沒跑）。
+所以盤前 / 盤中各排 3 個備援時間（08:05/25/45、12:05/25/45），每天只會發一次；排程拖過時段（盤前過 09:00、盤中過 13:35）就不發。
+
+#### （建議）用 cron-job.org 準時觸發（免費，約 10 分鐘）
+1. GitHub 右上頭像 → Settings → Developer settings → **Fine-grained tokens** → Generate new token：
+   Repository access 選 **Only select repositories → tw-stock-cloud**；Permissions → Repository → **Actions：Read and write**；到期日自選。複製 token（只出現一次）。
+2. 到 <https://cron-job.org> 註冊 → Create cronjob，每份各建一個：
+
+   | 名稱 | 時間（Asia/Taipei，週一～五） | URL |
+   |---|---|---|
+   | 盤前 | 08:10 | `https://api.github.com/repos/a0981755429-debug/tw-stock-cloud/actions/workflows/reports.yml/dispatches` |
+   | 盤中 | 12:05 | 同上 |
+
+   Advanced：Request method **POST**；Headers 加 `Authorization: Bearer <你的 token>`、`Accept: application/vnd.github+json`；
+   Request body：盤前 `{"ref":"main","inputs":{"kind":"premarket","force":"false"}}`，盤中把 `premarket` 換成 `midday`。
+3. 按 Test run，回 **204** 就成功（Actions 頁會出現一筆 workflow_dispatch）。`force` 一定要 `false`，休市日才會自動不發。
+
+GitHub 自己的排程保留當備援，兩邊都跑也只會發一次。盤中到價提醒（`intraday.yml`）也可以照做，body 用 `{"ref":"main","inputs":{"force":"false"}}`、每 10 分鐘一次。
 
 ---
 
