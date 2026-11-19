@@ -227,4 +227,6 @@ python -m stockapp.intraday --force --no-push
 - 資料放在 `docs/finance/vault.json`，**整份加密**（PBKDF2＋AES-GCM），要輸入密碼才會在瀏覽器裡解開；repo 裡沒有明文。
 - 股票現價直接讀股票頁的 `docs/data.json`，每天盤後自動更新。
 - 在網頁上改完按「儲存」：設定分頁填一把只能寫這個 repo 的 Fine-grained token（Contents: Read and write），就會直接寫回 GitHub；沒有設定的話會下載 `vault.json`，自己上傳也可以。
+- **淨值走勢**（資產分頁）：每月一筆總資產／總負債／淨值快照，按「儲存」時當月沒有快照會自動記，也可以手動重記；快照一樣加密存在 vault.json。
+- **提前還款試算**（貸款分頁）：每月多繳、一次還本（可選月份）、房貸縮短年限或降低月付，算省下利息、還清月份、③到期要一次還多少，並比較同樣的錢還哪一筆最划算。
 - 本機加解密：`FIN_PASS=密碼 node tools/finance_vault.mjs encrypt|decrypt 來源 目的`

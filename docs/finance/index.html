@@ -223,7 +223,14 @@ details.more summary{cursor:pointer;color:var(--accent);font-size:13px}
 <section id="p-loans" hidden>
   <div class="card"><h2>貸款（永豐三段）</h2><p class="hint">③是理財型，利息照「已動用」金額和實際天數算，未動用不計息。</p><div class="tbl"><table id="t-loans"></table></div><ul class="notes" id="loanNotes"></ul></div>
   <div class="card"><h2>每月貸款時間軸</h2><div id="loanChart"></div><div class="legend" id="loanLegend"></div></div>
-  <div class="card"><h2>提前還款試算</h2><div class="form"><label>貸款<select id="simLoan"></select></label><label>每月多繳<input id="simExtra" class="num" type="number" step="1000" value="0"></label><label>一次還本<input id="simLump" class="num" type="number" step="10000" value="0"></label></div><ul class="notes" id="simOut"></ul></div>
+  <div class="card"><h2>提前還款試算</h2><p class="hint">從這個月開始算。房貸提前還本可以選「縮短年限」（月付不變、早點還完，省最多利息）或「降低月付」（年限不變、每月少繳）。③理財型平常只繳息，多還的錢直接降低動用金額和利息。</p>
+    <div class="form"><label>貸款<select id="simLoan"></select></label><label>每月多繳<input id="simExtra" class="num" type="number" step="1000" min="0" value="0"></label><label>一次還本<input id="simLump" class="num" type="number" step="10000" min="0" value="0"></label><label>一次還本的月份<input id="simLumpM" type="month"></label><label>房貸還本後<select id="simMode"><option value="short">縮短年限</option><option value="lower">降低月付</option></select></label></div>
+    <div class="row" style="margin:10px 0 0"><span class="st">快速帶入：</span><button class="btn sm" data-sim="acct">還款專戶每月 11,500 直接還③</button><button class="btn sm" data-sim="bonus">年終 10 萬還③</button><button class="btn sm" data-sim="reset">清除</button></div>
+    <div class="tbl" style="margin-top:12px"><table id="simTbl"></table></div>
+    <div id="simChart"></div><div class="legend"><span><i style="background:var(--flex)"></i>照原本的餘額</span><span><i style="background:var(--accent)"></i>提前還款後的餘額</span></div>
+    <ul class="notes" id="simOut"></ul>
+    <h3>同樣的錢，還哪一筆最划算</h3><p class="hint">把上面的「每月多繳」和「一次還本」分別套到每一筆貸款試算。</p>
+    <div class="tbl"><table id="simCmp"></table></div><ul class="notes" id="simCmpNote"></ul></div>
 </section>
 
 <section id="p-monthly" hidden>
@@ -235,6 +242,11 @@ details.more summary{cursor:pointer;color:var(--accent);font-size:13px}
 <section id="p-assets" hidden>
   <div class="card"><h2>資產</h2><p class="hint">「現金」「預備金」算可動用現金（狀態「待核對」的另外列）；③剩餘額度是借款空間，不是現金。股票和保單在「投資」「保單」。</p><div class="tbl"><table id="t-assets"></table></div><div class="row edonly"><button class="btn" data-add="assets">新增資產</button></div></div>
   <div class="card"><h2>淨資產</h2><div class="tbl"><table id="netTbl"></table></div></div>
+  <div class="card"><h2>淨值走勢（每月快照）</h2><p class="hint">每月記一筆總資產、總負債、淨值，看長期有沒有往上走。按「儲存」時，這個月還沒有快照會自動記一筆；資料改過想重記，按下面的按鈕。快照跟其他資料一起加密存在 vault.json。</p>
+    <div class="row" style="margin:0 0 10px"><button class="btn" id="snapBtn">記錄／更新這個月的快照</button><span class="st" id="snapSt"></span></div>
+    <div id="snapChart"></div><div class="legend" id="snapLegend"><span><i style="background:var(--save)"></i>淨值（不含房子）</span><span><i style="background:var(--stock)"></i>淨值（含房子）</span><span><i style="background:var(--pay)"></i>資產（不含房子）</span><span><i style="background:var(--bad)"></i>負債</span></div>
+    <ul class="notes" id="snapNotes"></ul>
+    <div class="tbl"><table id="t-snapshots"></table></div><div class="row edonly"><button class="btn sm" data-add="snapshots">手動補一個月</button></div></div>
 </section>
 
 <section id="p-actions" hidden>
@@ -339,7 +351,7 @@ function showBanner(t){ const b=$('#banner'); b.textContent=t; b.hidden=!t; }
 /* ========== 資料版本升級 ========== */
 function migrate(){
   const d=D; let changed=false;
-  ['monthly','fixed','assets','loans','holdings','actions','sources','checks','phases','annual','upcoming'].forEach(k=>d[k]=d[k]||[]);
+  ['monthly','fixed','assets','loans','holdings','actions','sources','checks','phases','annual','upcoming','snapshots'].forEach(k=>d[k]=d[k]||[]);
   d.policy=d.policy||{funds:[]};
   const toObj=i=>Array.isArray(i)?{cat:i[0],name:i[1],amount:i[2]}:i;
   d.phases.forEach(p=>p.items=p.items.map(toObj)); d.annual.forEach(p=>p.items=p.items.map(toObj));
@@ -375,6 +387,7 @@ function setDirty(v,state){ dirty=v; const st=$('#savest');
   if(v){ st.textContent='本機草稿（尚未同步）'; clearTimeout(draftT); draftT=setTimeout(saveDraft,800); } else if(state) st.textContent=state; }
 async function saveDraft(){ D.savedAt=new Date().toISOString(); ls.set('fin.draft',JSON.stringify(await encryptData())); }
 $('#saveBtn').onclick=async()=>{
+  if(upsertSnap(true)){ renderAssets(); toast('這個月還沒有淨值快照，已自動記一筆'); }
   D.savedAt=new Date().toISOString(); D.updatedAt=D.savedAt.slice(0,10);
   const v=await encryptData(); const body=JSON.stringify(v)+'\n'; const tok=ls.get('fin.token');
   if(!tok){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([body],{type:'application/json'})); a.download='vault.json'; a.click();
@@ -508,6 +521,7 @@ const SCH={
   sources:{cols:[{k:'done',t:'已補',chk:1},{k:'freq',t:'頻率',o:['每月','每季','每年','事件','一次性']},{k:'inst',t:'機構'},{k:'item',t:'要下載的資料',w:1},{k:'fmt',t:'格式'},{k:'status',t:'狀態',o:['已有','缺口','待確認']},{k:'last',t:'最近補到'},{k:'note',t:'用途',w:1}],blank:{done:false,freq:'每月',inst:'',item:'',fmt:'',status:'缺口',last:'',note:''}},
   checks:{cols:[{k:'date',t:'檢查月份'},{k:'value',t:'保單價值',n:1},{k:'saved',t:'還款專戶',n:1},{k:'reserve',t:'還款備援',n:1},
     {t:'基本情境',c:r=>chk(r)?.base},{t:'警戒線',c:r=>chk(r)?.floor},{t:'到期預估還差',c:r=>chk(r)?.gap,warn:v=>v>0},{t:'判斷',c:r=>chk(r)?.st,txt:1},{k:'note',t:'備註',w:1}],blank:{date:'',value:null,saved:null,reserve:null,note:''}},
+  snapshots:{cols:[{k:'month',t:'月份'},{k:'assets',t:'資產（不含房子）',n:1},{k:'liab',t:'負債',n:1},{t:'淨值（不含房子）',c:r=>r.assets==null?null:(r.assets||0)-(r.liab||0),warn:v=>v<0},{k:'house',t:'房屋',n:1},{t:'淨值（含房子）',c:r=>r.assets==null?null:(r.assets||0)-(r.liab||0)+(r.house||0)},{t:'比上一筆',c:r=>snapDiff(r),warn:v=>v<0},{k:'note',t:'備註',w:1}],blank:{month:'',assets:null,liab:null,house:null,note:'手動補'}},
   funds:{arr:()=>D.policy.funds,cols:[{k:'name',t:'標的',w:1},{k:'cost',t:'首次配置',n:1},{k:'value',t:'目前價值',n:1},{k:'asof',t:'資料日期'},{k:'note',t:'備註',w:1}]}
 };
 const arrOf=k=>SCH[k].arr?SCH[k].arr():D[k];
@@ -732,14 +746,63 @@ function renderLoans(){
   yrs.forEach((y,i)=>{ let base=0; D.loans.forEach((l,li)=>{ const v=loanPayAt(l,y*12+11); if(v>0){ g+=`<rect x="${x(i)-bw/2}" y="${yy(base+v)}" width="${bw}" height="${yy(base)-yy(base+v)}" fill="${LC[li%4]}" rx="2"><title>${y} ${esc(l.name)} ${fmt(v)}</title></rect>`; base+=v; } }); g+=`<text x="${x(i)}" y="${H-6}" text-anchor="middle">${y}</text>`; });
   $('#loanChart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="每月貸款時間軸">${g}</svg>`;
   $('#loanLegend').innerHTML=D.loans.map((l,i)=>`<span><i style="background:${LC[i%4]}"></i>${esc(l.name.replace(/（.*?）/,''))}</span>`).join('');
-  const sel=$('#simLoan'); if(sel.options.length!==D.loans.length) sel.innerHTML=D.loans.map((l,i)=>`<option value="${i}">${esc(l.name)}</option>`).join(''); renderSim();
+  const sel=$('#simLoan'); if(sel.options.length!==D.loans.length) { sel.innerHTML=D.loans.map((l,i)=>`<option value="${i}">${esc(l.name)}</option>`).join(''); const bi=D.loans.findIndex(isBullet); if(bi>=0) sel.value=bi; } renderSim();
 }
-function renderSim(){ const l=D.loans[+$('#simLoan').value||0]; if(!l) return; const extra=+$('#simExtra').value||0, lump=+$('#simLump').value||0;
-  const run=(ex,lp)=>{ const i=(l.rate||0)/1200, st=loanStart(l), m0=Math.max(1,NOW-st+1); let bal=Math.max(0,loanBalAt(l,NOW)-lp), I=0, k=0; const g=(l.grace||0)*12, N=(l.years||0)*12; let p=null;
-    for(let m=m0;m<=N&&bal>0.5;m++){ k++; const x=bal*i; I+=x; let due; if(l.kind!=='房貸'||m<=g) due=x; else { if(p==null) p=pmt(bal,i,N-m+1); due=p; } if(l.kind!=='房貸'&&m===N) due=bal+x; bal=bal+x-Math.min(bal+x,due+ex); }
-    return {k,I}; };
-  const a=run(0,0), c=run(extra,lump); $('#simOut').innerHTML=note('good',`照原本：剩 ${a.k} 個月、利息約 ${fmt(a.I)}。`)+note(c.I<a.I?'good':'warn',`每月多繳 ${fmt(extra)}、一次還 ${fmt(lump)}：${c.k} 個月還清（${ymS(NOW+c.k-1)}），利息約 ${fmt(c.I)}，省 ${fmt(a.I-c.I)}。`); }
-document.addEventListener('input',e=>{ if(e.target.matches('#simLoan,#simExtra,#simLump')) renderSim(); });
+// 提前還款模擬：從這個月起逐月算。lumpT 那個月月初先還一次本金。
+function simLoan(l,{extra=0,lump=0,lumpT=NOW,mode='short'}={}){
+  const i=(l.rate||0)/1200, st=loanStart(l), g=(l.grace||0)*12, N=(l.years||0)*12, bul=isBullet(l);
+  const m0=Math.max(1,NOW-st+1); let bal=m0<=1?(bul?drawnOf(l):l.principal):loanBalAt(l,st+m0-2);
+  const p0=bul?0:pmt(l.principal,i,N-g); let I=0, k=0, firstPay=null, amortPay=null, dueBal=null; const ser=[];
+  for(let m=m0;m<=N&&bal>0.5;m++){ const t=st+m-1; k++;
+    if(lump>0&&t===Math.max(NOW,lumpT)) bal=Math.max(0,bal-lump);
+    if(bal<=0.5){ ser.push([t,0]); break; }
+    const x=bal*i; I+=x; let due;
+    if(bul) due=m===N?bal+x:x; else if(m<=g) due=x; else due=mode==='lower'?pmt(bal,i,N-m+1):p0;
+    if(bul&&m===N) dueBal=bal;
+    if(firstPay==null) firstPay=Math.min(bal+x,due);
+    if(!bul&&m>g&&amortPay==null) amortPay=Math.min(bal+x,due);
+    bal=Math.max(0,bal+x-Math.min(bal+x,due+extra)); ser.push([t,bal]); }
+  return {k,I,end:NOW+k-1,firstPay,amortPay,dueBal,ser,start:m0<=1?(bul?drawnOf(l):l.principal):loanBalAt(l,st+m0-2)};
+}
+function simOpts(){ return {extra:Math.max(0,+$('#simExtra').value||0),lump:Math.max(0,+$('#simLump').value||0),lumpT:ym($('#simLumpM').value)??NOW,mode:$('#simMode').value}; }
+function renderSim(){ const l=D.loans[+$('#simLoan').value||0]; if(!l) return; const o=simOpts(), bul=isBullet(l);
+  if(!$('#simLumpM').value) $('#simLumpM').value=monthKey(NOW);
+  const a=simLoan(l), c=simLoan(l,o), saved=a.I-c.I, early=a.k-c.k, any=o.extra>0||o.lump>0;
+  const row=(n,x,y,cls)=>`<tr><td>${n}</td><td class="r num">${x}</td><td class="r num"${cls?` style="color:var(--${cls})"`:''}>${y}</td></tr>`;
+  let h='<thead><tr><th></th><th class="r">照原本</th><th class="r">提前還款後</th></tr></thead><tbody>'+
+    row('目前餘額',fmt(a.start),fmt(a.start))+
+    row('還清月份',ymS(a.end),ymS(c.end),early>0?'good':'')+
+    row('剩幾個月',`${a.k} 個月`,`${c.k} 個月${early>0?`（早 ${early} 個月）`:''}`)+
+    row('這個月要繳（不含多繳）',fmt(a.firstPay),fmt(c.firstPay));
+  if(!bul&&(l.grace||0)>0&&a.amortPay!=null) h+=row('寬限期後月付',fmt(a.amortPay),fmt(c.amortPay),c.amortPay<a.amortPay?'good':'');
+  if(bul) h+=row(`到期（${ymS(loanStart(l)+l.years*12-1)}）要一次還`,fmt(a.dueBal),fmt(c.dueBal??0),(c.dueBal??0)<(a.dueBal??0)?'good':'');
+  h+=row('剩下的利息合計',fmt(a.I),fmt(c.I))+`<tr class="tot"><td>省下的利息</td><td></td><td class="r num" style="color:var(--good)">${fmt(saved)}</td></tr>`;
+  const outlay=o.extra*c.k+o.lump; if(any) h+=row('多拿出去的錢',`—`,fmt(outlay))+row('每多還 1 萬省下利息',`—`,outlay?fmt(saved/outlay*10000):'—');
+  $('#simTbl').innerHTML=h+'</tbody>';
+  // 餘額圖：每 6 個月一點
+  const pts=[]; for(let t=NOW;t<=a.end;t+=6) pts.push(t); if(pts[pts.length-1]!==a.end) pts.push(a.end);
+  const at=(r,t)=>{ if(t>r.end) return 0; const x=r.ser.find(p=>p[0]===t); return x?x[1]:0; };
+  $('#simChart').innerHTML=lineChart([{n:'照原本',c:'var(--flex)',v:pts.map(t=>at(a,t))},{n:'提前還款後',c:'var(--accent)',v:pts.map(t=>at(c,t))}],pts.map(t=>pts.length>14?String(Math.floor(t/12)):ymS(t)),{h:200});
+  const n=[];
+  if(!any) n.push(note('warn','輸入每月多繳或一次還本的金額，就會算出省下多少利息、提早幾個月還清。'));
+  else n.push(note('good',`${esc(l.name)}：每月多繳 ${fmt(o.extra)}${o.lump?`、${ymS(Math.max(NOW,o.lumpT))} 一次還 ${fmt(o.lump)}`:''}，利息少付 ${fmt(saved)}${early>0?`，提早 ${early} 個月（${ymS(c.end)}）還清`:''}。`));
+  if(bul){ const b=bullet(), ri=repayInfo();
+    n.push(note('warn',`③平常只繳息，多還的錢會直接降低動用金額：每少動用 10 萬，每月利息少約 ${fmt(100000*(l.rate||0)/1200)}。到期前還要把剩下的動用一次還清，原計畫是用保單解約＋還款專戶＋還款備援。`));
+    if(any&&ri&&b===l) n.push(note(ri.gap-(a.dueBal-(c.dueBal??0))>0?'warn':'good',`到期一次還的金額從 ${fmt(a.dueBal)} 降到 ${fmt(c.dueBal??0)}。基本情境原本缺口 ${fmt(ri.gap)}（尚未扣備援）${S().acctMode==='抵③'&&o.extra?'；注意設定已選「抵③」，專戶 11,500 已算進缺口，這裡再多繳就是額外的錢':''}。`));
+    n.push(note('warn','提前多還之前，先確認緊急預備金夠（目標 50 萬），③還了之後雖然可以再動用，但要付利息、也會被銀行重新審額度。')); }
+  else n.push(note('warn',`房貸提前還本前先看契約有沒有「提前清償違約金」（常見綁約 2～3 年，撥款是 2026/10），${o.mode==='lower'?'也要跟銀行確認還本後是「降低月付」而不是自動縮短年限':'並跟銀行說要「縮短年限」'}。`));
+  $('#simOut').innerHTML=n.join('');
+  // 比較每一筆：每 1 元提前還本，每年省下的利息就是那筆的利率，所以利率最高的先還
+  const maxR=Math.max(...D.loans.map(x=>x.rate||0));
+  $('#simCmp').innerHTML='<thead><tr><th>貸款</th><th class="r">利率%</th><th class="r">多拿出去的錢</th><th class="r">省下利息</th><th class="r">提早還清</th><th class="r">還清月份</th></tr></thead><tbody>'+D.loans.map(x=>{ const A=simLoan(x), C=simLoan(x,o);
+    return `<tr><td>${esc(x.name)}${(x.rate||0)===maxR?' <span class="pill good">利率最高</span>':''}</td><td class="r num">${x.rate??'—'}</td><td class="r num">${any?fmt(o.extra*C.k+o.lump):'—'}</td><td class="r num">${any?fmt(A.I-C.I):'—'}</td><td class="r num">${any&&A.k>C.k?(A.k-C.k)+' 個月':'—'}</td><td class="r num">${ymS(C.end)}</td></tr>`; }).join('')+'</tbody>';
+  $('#simCmpNote').innerHTML=note('warn','每多還 1 元本金，一年省下的利息就是那筆的利率，所以<b>利率最高的那筆先還最划算</b>。①②年限長，每月多繳會繳很多年，「省下利息」總額看起來比較大，是因為多拿出去的錢也多；房貸還要先確認有沒有提前清償違約金。');
+}
+document.addEventListener('input',e=>{ if(e.target.matches('#simLoan,#simExtra,#simLump,#simLumpM,#simMode')) renderSim(); });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-sim]'); if(!b) return; const bi=D.loans.findIndex(isBullet);
+  if(b.dataset.sim==='reset'){ $('#simExtra').value=0; $('#simLump').value=0; $('#simLumpM').value=monthKey(NOW); }
+  else { if(bi>=0) $('#simLoan').value=bi; if(b.dataset.sim==='acct'){ $('#simExtra').value=S().saveM||11500; $('#simLump').value=0; } else { $('#simExtra').value=0; $('#simLump').value=100000; const y=Math.floor(NOW/12)+(NOW%12>=1?1:0); $('#simLumpM').value=`${y}-02`; } }
+  renderSim(); });
 
 /* ========== 收支、資產 ========== */
 function renderMonthly(){
@@ -754,17 +817,50 @@ function renderMonthly(){
   const ok=rows.filter(r=>r.status==='已核對'&&tot(r)!=null), avg=k=>ok.reduce((a,r)=>a+(r[k]||0),0)/(ok.length||1), un=rows.length-ok.length;
   $('#monNotes').innerHTML=(ok.length?note(avg('living')<=S().living?'good':'bad',`已核對的 ${ok.length} 個月，生活費月均 ${fmt(avg('living'))}（目標 ${fmt(S().living)}），一次性月均 ${fmt(avg('oneoff'))}。`):'')+(un?note('warn',`還有 ${un} 個月是「估算／待分類」（淡色），沒算進平均。生活費 2.5 萬要用之後 3 個月核對過的紀錄驗證。`):'');
 }
+function netNow(){
+  const pol=policyNow(), mode=S().acctMode==='抵③';
+  const rows=[['確定可用現金',cashSure()],['待核對現金',cashChk()],['還款備援',resNow()],[mode?'③還款專戶（已抵③，不另算）':'③還款專戶',mode?0:acctNow()],['股票與 ETF',holdTotal()],['保單價值'+(pol.est?'（估算）':''),pol.v]];
+  const A=rows.reduce((a,r)=>a+r[1],0), loans=D.loans.map(l=>{ let v=loanBalAt(l,NOW); if(isBullet(l)&&mode) v=Math.max(0,v-acctNow()); return [l.name,v]; });
+  return {rows,A,loans,L:loans.reduce((a,r)=>a+r[1],0),house:house(),pol};
+}
 function renderAssets(){
   renderTable('assets');
-  const pol=policyNow(), b=bullet(), mode=S().acctMode==='抵③';
-  const rows=[['確定可用現金',cashSure()],['待核對現金',cashChk()],['還款備援',resNow()],[mode?'③還款專戶（已抵③，不另算）':'③還款專戶',mode?0:acctNow()],['股票與 ETF',holdTotal()],['保單價值'+(pol.est?'（估算）':''),pol.v]];
-  const A=rows.reduce((a,r)=>a+r[1],0); let h='<tbody>'+rows.map(r=>`<tr><td>${r[0]}</td><td class="r num">${fmt(r[1])}</td></tr>`).join('')+`<tr class="tot"><td>資產合計（不含房子）</td><td class="r num">${fmt(A)}</td></tr>`;
-  let L=0; D.loans.forEach(l=>{ let v=loanBalAt(l,NOW); if(isBullet(l)&&mode) v=Math.max(0,v-acctNow()); L+=v; h+=`<tr><td>− ${esc(l.name)}</td><td class="r num">${fmt(-v)}</td></tr>`; });
+  const b=bullet(), {rows,A,loans,L,pol}=netNow();
+  let h='<tbody>'+rows.map(r=>`<tr><td>${r[0]}</td><td class="r num">${fmt(r[1])}</td></tr>`).join('')+`<tr class="tot"><td>資產合計（不含房子）</td><td class="r num">${fmt(A)}</td></tr>`;
+  loans.forEach(([n,v])=>{ h+=`<tr><td>− ${esc(n)}</td><td class="r num">${fmt(-v)}</td></tr>`; });
   h+=`<tr class="tot"><td>淨資產（不含房子）</td><td class="r num">${fmt(A-L)}</td></tr><tr><td>房屋（鑑價，不能直接付帳單）</td><td class="r num">${fmt(house())}</td></tr><tr class="tot"><td>淨資產（含房子）</td><td class="r num">${fmt(A-L+house())}</td></tr>`;
   if(b) h+=`<tr><td class="st">③剩餘額度（借款空間，不算資產）</td><td class="r num st">${fmt(b.principal-drawnOf(b))}</td></tr>`;
-  if(pol.v&&A) h+=`<tr><td class="st">保單占非房屋資產</td><td class="r num st">${pct(pol.v/A)}</td></tr>`;
+  if(pol.v&&A) h+=`<tr><td class="st">保單價值占非房屋資產</td><td class="r num st">${pct(pol.v/A)}</td></tr>`;
   $('#netTbl').innerHTML=h+'</tbody>';
+  renderSnaps();
 }
+/* ========== 淨值快照 ========== */
+const monthKey=t=>`${Math.floor(t/12)}-${String(t%12+1).padStart(2,'0')}`;
+const snapNet=r=>(r.assets||0)-(r.liab||0);
+const snapsSorted=()=>D.snapshots.filter(r=>ym(r.month)!=null&&r.assets!=null).sort((a,b)=>ym(a.month)-ym(b.month));
+function snapDiff(r){ const s=snapsSorted(), i=s.indexOf(r); return i>0?snapNet(r)-snapNet(s[i-1]):null; }
+function upsertSnap(auto){
+  const key=monthKey(NOW), cur=D.snapshots.find(r=>ym(r.month)===NOW); if(cur&&auto) return false;
+  const {A,L,house:hs,pol}=netNow(), v={month:key,assets:Math.round(A),liab:Math.round(L),house:Math.round(hs)};
+  if(cur) Object.assign(cur,v); else D.snapshots.push({...v,note:pol.est?'保單用估算值':''});
+  D.snapshots.sort((a,b)=>(ym(a.month)??1e9)-(ym(b.month)??1e9)); setDirty(true); return true;
+}
+function renderSnaps(){
+  renderTable('snapshots');
+  const s=snapsSorted(), has=D.snapshots.some(r=>ym(r.month)===NOW);
+  $('#snapSt').textContent=has?`${monthKey(NOW)} 已有快照`:`${monthKey(NOW)} 還沒有快照`;
+  if(!s.length){ $('#snapChart').innerHTML='<p class="empty">還沒有快照。按上面的按鈕記第一筆，之後每個月記一次。</p>'; $('#snapNotes').innerHTML=''; return; }
+  const lab=s.map(r=>{ const t=ym(r.month); return String(Math.floor(t/12)).slice(2)+'/'+String(t%12+1).padStart(2,'0'); });
+  $('#snapChart').innerHTML=lineChart([{n:'資產（不含房子）',c:'var(--pay)',v:s.map(r=>r.assets||0)},{n:'負債',c:'var(--bad)',v:s.map(r=>r.liab||0)},{n:'淨值（不含房子）',c:'var(--save)',v:s.map(snapNet)},{n:'淨值（含房子）',c:'var(--stock)',v:s.map(r=>snapNet(r)+(r.house||0))}],lab);
+  const n=[], last=s[s.length-1];
+  if(s.length>1){ const prev=s[s.length-2], d=snapNet(last)-snapNet(prev), mons=ym(last.month)-ym(prev.month);
+    n.push(note(d>=0?'good':'bad',`${esc(last.month)} 淨值（不含房子）${fmt(snapNet(last))}，比 ${esc(prev.month)} ${d>=0?'多':'少'} ${fmt(Math.abs(d))}${mons>1?`（隔了 ${mons} 個月）`:''}。`));
+    const first=s[0], span=ym(last.month)-ym(first.month); if(span>=3) n.push(note('good',`${esc(first.month)} 到現在 ${span} 個月，淨值平均每月 ${snapNet(last)>=snapNet(first)?'增加':'減少'} ${fmt(Math.abs(snapNet(last)-snapNet(first))/span)}；負債從 ${wan(first.liab)} 變 ${wan(last.liab)}。`)); }
+  else n.push(note('warn','只有一筆快照，下個月再記一次才看得出走勢。'));
+  n.push(note('warn','保單在還沒填實際價值前是用模型估算，股票用快照當天的現價；這兩項波動會讓淨值上下跳，看長期趨勢就好。'));
+  $('#snapNotes').innerHTML=n.join('');
+}
+$('#snapBtn').onclick=()=>{ const had=D.snapshots.some(r=>ym(r.month)===NOW); upsertSnap(false); renderAssets(); toast(had?'已用目前資料更新這個月的快照':'已記錄這個月的快照'); };
 function renderSettings(){ $$('[data-set]').forEach(el=>{ if(document.activeElement!==el) el.value=S()[el.dataset.set]??''; }); $('#repoIn').value=repoName(); if(!$('#tokSt').dataset.msg) $('#tokSt').textContent=ls.get('fin.token')?'已設定金鑰':'尚未設定金鑰'; }
 function renderAll(soft){
   renderOverview(); renderInvest(); renderPolicy(); renderLoans(); renderMonthly(); renderAssets(); renderSettings();
