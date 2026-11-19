@@ -1,4 +1,4 @@
-"""盤後更新（每個交易日 17:30 左右跑）：抓日 K、算訊號、抓財報 → docs/data.json，並推播今日訊號摘要。
+"""盤後更新（每個交易日約 17:50 跑、18:00 推播）：抓日 K、算訊號、抓財報 → docs/data.json，並推播今日訊號摘要。
 
 本機測試：python -m stockapp.daily --no-push
 """
@@ -199,12 +199,20 @@ def journal_text(items: list[dict], info: dict, now: datetime) -> str:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--no-push", action="store_true")
+    p.add_argument("--once", action="store_true",
+                   help="排程用：今天盤後推播已發過就整個跳過；超過時段（週末、14:00 前）不推播")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     settings = config.load()
-    info = data.stock_info()
     now = datetime.now(TPE)
+    if args.once:
+        if reports.already_sent("postmarket", now.date()):
+            log.info("今天的盤後推播已經發過，結束")
+            return 0
+        if not reports.in_window("postmarket", now):
+            args.no_push = True     # 排程拖到隔天 / 太早：只更新網頁，不推過時的盤後分析
+    info = data.stock_info()
     premiums = data.etf_premiums() if any(data.is_etf(s.id) for s in settings.stocks) else {}
     log.info("ETF 折溢價資料 %d 檔", len(premiums))
     # 先讀持股（永豐庫存同步），持股但不在自選清單的也一起算綜合訊號
@@ -282,7 +290,8 @@ def main(argv=None) -> int:
         jr = journal_text(items, info, now)
         if jr:
             msg += "\n\n" + jr
-        notify.telegram(msg)
+        if notify.telegram(msg) and args.once:
+            reports.mark_sent("postmarket", now.date())
     ok = sum(1 for it in items if it["close"] is not None)
     if settings.stocks and ok == 0:
         log.error("所有股票都抓不到價格，可能資料來源暫時故障")

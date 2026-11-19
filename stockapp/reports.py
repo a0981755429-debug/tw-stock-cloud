@@ -1,4 +1,4 @@
-"""定時分析推播：盤前（08:30）、盤中買賣訊號（12:30）、盤後分析段落（併在 17:30 盤後推播最前面）。
+"""定時分析推播：盤前（約 08:00）、盤中買賣訊號（約 11:00）、盤後分析段落（約 18:00，併在盤後推播最前面）。
 
 都只讀現成的 docs/data.json（前一次盤後的綜合訊號）再加上即時資料，不重算全部指標，跑得快。
 結構：fetch_* 連網抓資料；*_message 是純函式（方便測試）；main 給 GitHub Actions 呼叫。
@@ -27,7 +27,8 @@ US = [("^SOX", "費城半導體"), ("^IXIC", "那斯達克"), ("^GSPC", "S&P 500
 ADR_RATIO = {"TSM": ("2330", 5)}   # 1 股 ADR = 5 股台股
 HOLIDAY_API = "https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule"
 SENT = config.ROOT / "state" / "reports_sent.json"   # 每份報告每天只發一次（排程有多個備援時間）
-WINDOW = {"premarket": (time(6, 30), time(9, 0)), "midday": (time(9, 0), time(13, 35))}
+WINDOW = {"premarket": (time(6, 30), time(9, 0)), "midday": (time(9, 30), time(13, 35)),
+          "postmarket": (time(14, 0), time(23, 59))}
 
 
 def already_sent(kind: str, day: date, path=SENT) -> bool:
@@ -196,7 +197,7 @@ def premarket_message(d: dict, us: dict, today: date) -> str:
     if recap:
         lines.append(f"\n【昨日綜合訊號】（{(d.get('updated_at') or '')[:10]} 盤後）")
         lines += [f"• {x}" for x in recap]
-    lines.append("\n12:30 會再推一次盤中買賣訊號。\n⚠️ " + DISCLAIMER)
+    lines.append("\n11:00 左右會再推一次盤中買賣訊號。\n⚠️ " + DISCLAIMER)
     return "\n".join(lines)
 
 
@@ -260,7 +261,7 @@ def midday_message(d: dict, quotes: dict, now: datetime) -> str:
         lines += [f"• {x}" for x in sell]
     if len(lines) <= 2:
         lines.append("\n今天盤中沒有特別的買賣訊號，照原計畫。")
-    lines.append(f"\n評分是 {(d.get('updated_at') or '')[:10]} 盤後的綜合訊號，價格是即時價；盤後 17:30 會重新計算。"
+    lines.append(f"\n評分是 {(d.get('updated_at') or '')[:10]} 盤後的綜合訊號，價格是即時價；盤後約 18:00 會重新計算。"
                  "\n⚠️ " + DISCLAIMER)
     return "\n".join(lines)
 
