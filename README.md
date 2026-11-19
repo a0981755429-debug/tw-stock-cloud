@@ -4,7 +4,7 @@
 
 - **盤中**（週一到週五 09:00–13:30）每 10 分鐘檢查一次即時股價，到價就傳 **Telegram** 通知你
 - **網頁即時股價**：打開網頁時，由你的手機／電腦瀏覽器直接抓最新股價（盤中每 20 秒自動更新），不經過 GitHub Actions、不佔用額度；依序試證交所 → Yahoo 奇摩股市 → Yahoo Finance，全部抓不到才退回排程寫的報價。標題列會寫「即時報價 幾點幾分（來源）」
-- **盤後**（每天 17:30 左右）抓日 K 線、算買賣訊號、抓財報，更新網頁，並推播今日訊號摘要
+- **盤後**（每天 18:00 左右）抓日 K 線、算買賣訊號、抓財報，更新網頁，並推播今日訊號摘要
 - 產生一個**手機網頁**，隨時打開看自選股、訊號分析、走勢圖、財報
 
 > ⚠️ 訊號是規則式的參考（均線、MACD、RSI、KD、成交量），**不是投資建議**。
@@ -127,15 +127,15 @@ stocks:
 
 | 時間（台北） | 內容 | 排程 |
 |---|---|---|
-| 約 08:00～08:30 | 🌅 **盤前分析**：昨夜費半、那斯達克、S&P 500、輝達、台積電 ADR（換算台股溢價）、美元兌台幣；今天除息的、接近你設買賣點的；昨天的綜合訊號 | `.github/workflows/reports.yml` |
-| 約 12:00～12:30 | ⏱ **盤中買賣訊號**：用即時價對照昨天的綜合訊號，列出偏多又回檔的、ETF 即時殖利率到門檻的、到你設買賣點的、持股偏空或大跌的 | `.github/workflows/reports.yml` |
-| 約 17:30～18:00 | 🌇 **盤後分析**：加權指數、你的持股今天漲跌（依占比估算）、評分明顯變動與原因、自選漲跌最多、接下來的除息；接著是綜合訊號與持股損益 | `.github/workflows/daily.yml` |
+| 約 08:00 | 🌅 **盤前分析**：昨夜費半、那斯達克、S&P 500、輝達、台積電 ADR（換算台股溢價）、美元兌台幣；今天除息的、接近你設買賣點的；昨天的綜合訊號 | `.github/workflows/reports.yml` |
+| 約 11:00 | ⏱ **盤中買賣訊號**：用即時價對照昨天的綜合訊號，列出偏多又回檔的、ETF 即時殖利率到門檻的、到你設買賣點的、持股偏空或大跌的 | `.github/workflows/reports.yml` |
+| 約 18:00 | 🌇 **盤後分析**：加權指數、你的持股今天漲跌（依占比估算）、評分明顯變動與原因、自選漲跌最多、接下來的除息；接著是綜合訊號與持股損益 | `.github/workflows/daily.yml` |
 
 休市日（週末、證交所公告的國定假日）不發。想關掉全部推播：`watchlist.yml` 改 `signal_notify: false`。
 手動測試：Actions →「盤前 / 盤中分析推播」→ Run workflow，選 premarket 或 midday（`force` 勾著就不管休市都會發）。
 
 **GitHub 排程不可靠**：免費的 GitHub 排程是「盡力而為」，常延遲幾小時、甚至整次被丟掉（2026-11-17 盤前、盤中兩份都沒跑）。
-所以盤前 / 盤中各排 3 個備援時間（08:05/25/45、12:05/25/45），每天只會發一次；排程拖過時段（盤前過 09:00、盤中過 13:35）就不發。
+所以每份都排 3 個時間（盤前 07:45/07:55/08:10、盤中 10:45/10:55/11:10、盤後 17:50/18:15/18:40），每天只會發一次；排程拖過時段（盤前過 09:00、盤中過 13:35、盤後拖到隔天）就不發。
 
 #### （建議）用 cron-job.org 準時觸發（免費，約 10 分鐘）
 1. GitHub 右上頭像 → Settings → Developer settings → **Fine-grained tokens** → Generate new token：
@@ -144,11 +144,12 @@ stocks:
 
    | 名稱 | 時間（Asia/Taipei，週一～五） | URL |
    |---|---|---|
-   | 盤前 | 08:10 | `https://api.github.com/repos/a0981755429-debug/tw-stock-cloud/actions/workflows/reports.yml/dispatches` |
-   | 盤中 | 12:05 | 同上 |
+   | 盤前 | 08:00 | `https://api.github.com/repos/a0981755429-debug/tw-stock-cloud/actions/workflows/reports.yml/dispatches` |
+   | 盤中 | 11:00 | 同上 |
+   | 盤後 | 17:55 | `https://api.github.com/repos/a0981755429-debug/tw-stock-cloud/actions/workflows/daily.yml/dispatches` |
 
    Advanced：Request method **POST**；Headers 加 `Authorization: Bearer <你的 token>`、`Accept: application/vnd.github+json`；
-   Request body：盤前 `{"ref":"main","inputs":{"kind":"premarket","force":"false"}}`，盤中把 `premarket` 換成 `midday`。
+   Request body：盤前 `{"ref":"main","inputs":{"kind":"premarket","force":"false"}}`，盤中把 `premarket` 換成 `midday`；盤後 `{"ref":"main","inputs":{"once":"true"}}`（盤後要跑約 3 分鐘，所以 17:55 觸發、約 18:00 收到）。
 3. 按 Test run，回 **204** 就成功（Actions 頁會出現一筆 workflow_dispatch）。`force` 一定要 `false`，休市日才會自動不發。
 
 GitHub 自己的排程保留當備援，兩邊都跑也只會發一次。盤中到價提醒（`intraday.yml`）也可以照做，body 用 `{"ref":"main","inputs":{"force":"false"}}`、每 10 分鐘一次。

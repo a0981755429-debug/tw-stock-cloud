@@ -93,3 +93,20 @@ def test_window_and_once_per_day(tmp_path):
     assert reports.already_sent("midday", tue.date(), f)
     assert not reports.already_sent("premarket", tue.date(), f)
     assert not reports.already_sent("midday", date(2026, 11, 18), f)
+
+
+def test_daily_once_skips_when_already_sent_and_outside_window(monkeypatch, tmp_path):
+    from stockapp import config, daily
+    sent = tmp_path / "sent.json"
+    monkeypatch.setattr(reports, "SENT", sent)
+    monkeypatch.setattr(reports.already_sent, "__defaults__", (sent,))
+    monkeypatch.setattr(reports.mark_sent, "__defaults__", (sent,))
+    monkeypatch.setattr(config, "load", lambda: config.Settings([]))
+    today = datetime.now(reports.TPE).date()
+    reports.mark_sent("postmarket", today)
+    called = []
+    monkeypatch.setattr(daily.data, "stock_info", lambda: called.append(1) or {})
+    assert daily.main(["--once"]) == 0 and not called       # 今天發過：整個跳過
+    assert reports.in_window("postmarket", datetime(2026, 11, 19, 18, 0))
+    assert not reports.in_window("postmarket", datetime(2026, 11, 20, 3, 44))   # 拖到隔天凌晨不推
+    assert not reports.in_window("postmarket", datetime(2026, 11, 21, 18, 0))   # 週六
